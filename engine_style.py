@@ -6,6 +6,7 @@ import time
 from feedback import TOPIC_PREFERENCES, apply_round, load_preferences, load_ratings, pending_ratings, revert_round, save_preferences
 from proactive import load_outcomes
 from style import apply_compression, archived_style_messages, compress_samples, measured_style, revert_compression, style_length, style_limit
+import fsutil
 
 
 class StyleMixin:
@@ -13,7 +14,7 @@ class StyleMixin:
         tmp = self.base / "runtime/style-profile.tmp"
         tmp.write_text(json.dumps(self.style_state, ensure_ascii=False, indent=2))
         os.chmod(tmp, 0o600)
-        tmp.replace(self.style_state_path)
+        fsutil.replace(tmp, self.style_state_path)
 
     def check_style_summary(self):
         now = time.monotonic()

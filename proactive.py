@@ -16,6 +16,7 @@ from pathlib import Path
 from people import load_people
 from style import tail_group_records
 from temporal_relevance import outdated_for_current_claim
+import fsutil
 
 
 PROMOTIONAL_TOPIC = re.compile(
@@ -246,7 +247,7 @@ def save_topic_state(base, group, state):
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1))
     os.chmod(tmp, 0o600)
-    tmp.replace(path)
+    fsutil.replace(tmp, path)
 
 
 # -- how a topic was received -------------------------------------------------------------------------------------
@@ -270,7 +271,7 @@ def save_outcome(base, key, record):
     tmp = outcomes_path(base).with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1))
     os.chmod(tmp, 0o600)
-    tmp.replace(outcomes_path(base))
+    fsutil.replace(tmp, outcomes_path(base))
 
 
 def topic_label(reactions, people, good_reactions=5):

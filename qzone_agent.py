@@ -2,11 +2,11 @@
 import argparse
 import json
 import os
-import subprocess
 import tempfile
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from image_prep import save_jpeg
 from llm import Model
 from style import load_style_profile
 from temporal_relevance import today
@@ -31,9 +31,7 @@ def download_image(url, directory, index):
         raise ValueError("动画内容暂不读取")
     source, target = directory / f"{index}.source", directory / f"{index}.jpg"
     source.write_bytes(data)
-    conversion = subprocess.run(["/usr/bin/sips", "-Z", "1600", "-s", "format", "jpeg", str(source), "--out", str(target)],
-                                capture_output=True, timeout=15)
-    if conversion.returncode or not target.is_file() or target.stat().st_size == 0:
+    if not save_jpeg(source, target, 1600):
         raise ValueError("图片无法解码")
     return target
 

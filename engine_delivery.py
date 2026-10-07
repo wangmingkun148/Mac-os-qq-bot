@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from proactive import record_proactive
 from snapshot import parse_snapshot, same_text
-import subprocess
 import time
 
 
@@ -179,13 +178,13 @@ class DeliveryMixin:
         if data.get("group") != job["group"] or not data.get("messages_ready", True):
             if job["attempts"] < 6:
                 job["attempts"] += 1
-                subprocess.run(["open", "-a", self.config.get("qq_app", "/Applications/QQ.app")], timeout=10, check=False)
+                self.native.call("launch", app=self.config.get("qq_app", ""))
                 self.native.call("select", group=job["group"], force=True)
             return
         draft = str(data.get("draft", "")).strip()
         if any(m.get("self") and m["id"] not in job["before"] and same_text(m.get("text", ""), job["text"]) for m in data["messages"]):
             outcome = "那条消息其实已经发出"
-        elif not draft or draft == "按住 ⌃ ⌥，使用语音输入文字":
+        elif not draft:
             outcome = "那条消息没有发出，输入栏是空的；不重发"
         elif same_text(draft, job["text"]):
             result = self.native.call("clear_draft", group=job["group"], text=job["text"])

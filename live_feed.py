@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import threading
 import time
+import fsutil
 
 TURN_LIMIT = 40
 ACTIVITY_LIMIT = 60
@@ -184,6 +185,6 @@ class LiveFeed:
         try:
             tmp.write_text(data)
             os.chmod(tmp, 0o600)
-            tmp.replace(self.path)
+            fsutil.replace(tmp, self.path)
         except OSError:
             pass

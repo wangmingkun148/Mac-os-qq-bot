@@ -2,22 +2,45 @@
 from __future__ import annotations
 import os
 from pathlib import Path
-import re
-import subprocess
 
-SIPS = "/usr/bin/sips"
+try:
+    from PIL import Image, ImageOps
+except ImportError:             # Pillow is only needed for resizing; without it images are sent as they are
+    Image = ImageOps = None
 
 
 def image_size(path):
-    """(width, height) in pixels, or None when macOS ``sips`` cannot read the file."""
-    try:
-        result = subprocess.run([SIPS, "-g", "pixelWidth", "-g", "pixelHeight", str(path)],
-                                capture_output=True, text=True, timeout=10)
-        width = re.search(r"pixelWidth:\s*(\d+)", result.stdout)
-        height = re.search(r"pixelHeight:\s*(\d+)", result.stdout)
-        return (int(width.group(1)), int(height.group(1))) if width and height else None
-    except (OSError, subprocess.TimeoutExpired):
+    """(width, height) in pixels, or None when the file cannot be read as an image."""
+    if Image is None:
         return None
+    try:
+        with Image.open(path) as picture:
+            return picture.size
+    except (OSError, ValueError):
+        return None
+
+
+def save_jpeg(source, target, max_edge, quality=85):
+    """Write ``source`` to ``target`` as a JPEG whose longer side is at most ``max_edge`` pixels (None = keep size).
+    Returns True on success."""
+    if Image is None:
+        return False
+    try:
+        with Image.open(source) as picture:
+            picture = ImageOps.exif_transpose(picture)
+            if max_edge:
+                picture.thumbnail((int(max_edge), int(max_edge)), Image.LANCZOS)
+            if picture.mode in ("RGBA", "LA", "P"):
+                picture = picture.convert("RGBA")
+                background = Image.new("RGB", picture.size, (255, 255, 255))
+                background.paste(picture, mask=picture.getchannel("A"))
+                picture = background
+            elif picture.mode != "RGB":
+                picture = picture.convert("RGB")
+            picture.save(target, "JPEG", quality=quality)
+        return Path(target).is_file() and Path(target).stat().st_size > 0
+    except (OSError, ValueError):
+        return False
 
 
 def shrink_image(path, max_edge=2048):
@@ -30,13 +53,11 @@ def shrink_image(path, max_edge=2048):
         return False
     target = Path(str(path) + ".small.jpg")
     try:
-        done = subprocess.run([SIPS, "-Z", str(int(max_edge)), "-s", "format", "jpeg", "-s", "formatOptions", "85",
-                               str(path), "--out", str(target)], capture_output=True, timeout=20)
-        if done.returncode or not target.is_file() or target.stat().st_size == 0:
+        if not save_jpeg(path, target, max_edge):
             return False
         os.replace(target, path)
         return True
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError:
         return False
     finally:
         Path(target).unlink(missing_ok=True)

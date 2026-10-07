@@ -9,6 +9,7 @@ import time
 import uuid
 import urllib.error
 import urllib.request
+import fsutil
 
 
 class ImageQuota:
@@ -45,7 +46,7 @@ class ImageQuota:
             tmp = self.path.with_suffix(".tmp")
             tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
             os.chmod(tmp, 0o600)
-            tmp.replace(self.path)
+            fsutil.replace(tmp, self.path)
 
 
 class ImageGenerator:

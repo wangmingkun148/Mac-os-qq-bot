@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import fsutil
 
 VERSIONS_KEPT = 5
 
@@ -41,7 +42,7 @@ def save_preferences(base, data, name="owner-preferences.json"):
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
     os.chmod(tmp, 0o600)
-    tmp.replace(path)
+    fsutil.replace(tmp, path)
 
 
 def pending_ratings(ratings, preferences):

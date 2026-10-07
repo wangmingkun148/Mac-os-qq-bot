@@ -7,7 +7,6 @@ import json
 import os
 import queue
 import re
-import subprocess
 import sys
 import threading
 import time
@@ -27,6 +26,7 @@ from browser_agent import browser_request
 from reply_shape import repeat_chain, split_reply
 import random
 from daily_stats import DailyStats
+import fsutil
 
 
 IMAGE_LOAD_SECONDS = 10
@@ -185,7 +185,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
             self.status["archived_messages"] = self.archive.count
             tmp = self.base / "runtime/status.tmp"
             tmp.write_text(json.dumps(self.status, ensure_ascii=False, indent=2))
-            tmp.replace(self.base / "runtime/status.json")
+            fsutil.replace(tmp, self.base / "runtime/status.json")
         self.live.flush()
 
 
@@ -230,7 +230,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
         path = self.base / "runtime/bridge.log"
         try:
             if path.exists() and path.stat().st_size > LOG_LIMIT_BYTES:
-                path.replace(path.with_name("bridge.log.1"))  # keep one previous generation
+                fsutil.replace(path, path.with_name("bridge.log.1"))  # keep one previous generation
             with path.open("a") as handle:
                 handle.write(line)
         except OSError:
@@ -634,12 +634,12 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
         if self.user_typing(now):
             self.last_wake = now - self.wake_interval + 5         # look again in 5 s, without growing the back-off
             return
-        app = self.config.get("qq_app", "/Applications/QQ.app")
+        app = self.config.get("qq_app", "")
         self.last_wake = now
         try:
-            subprocess.run(["open", "-a", app], timeout=10, check=False)
+            self.native.call("launch", app=app)
             self.native.call("wake")
-            self.log(f"QQ 界面不可读，已尝试唤醒 {app}（下次最快 {self.wake_interval:.0f} 秒后重试）")
+            self.log(f"QQ 界面不可读，已尝试唤醒 QQ（下次最快 {self.wake_interval:.0f} 秒后重试）")
             self.daily.add("wakes")
         except Exception as exc:
             self.log(f"唤醒 QQ 失败：{str(exc)[:150]}")
@@ -683,7 +683,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
             tmp = self.conversations_path.with_suffix(".tmp")
             tmp.write_text(json.dumps(self.conversation_details, ensure_ascii=False, indent=2))
             os.chmod(tmp, 0o600)
-            tmp.replace(self.conversations_path)
+            fsutil.replace(tmp, self.conversations_path)
         self.status["conversations"] = self.conversation_details
         self.status["reply_all_conversations"] = bool(self.config.get("reply_all_conversations"))
         return changed
@@ -1012,7 +1012,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
         if group not in self.select_started:
             if self.user_typing(now):
                 return
-            subprocess.run(["open", "-a", self.config.get("qq_app", "/Applications/QQ.app")], timeout=10, check=False)
+            self.native.call("launch", app=self.config.get("qq_app", ""))
             self.native.call("wake")
         since = self.select_started.setdefault(group, now)
         if now - since > 15:

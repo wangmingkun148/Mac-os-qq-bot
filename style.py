@@ -5,6 +5,7 @@ import json
 import os
 import time
 from messages import MessageArchive, is_style_message
+import fsutil
 
 
 def tail_group_records(path, group, limit, block=1 << 16):
@@ -164,7 +165,7 @@ def rebuild_style_profile(base, config, model):
             tmp = base / "runtime/style-profile.rebuild.tmp"
             tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2))
             os.chmod(tmp, 0o600)
-            tmp.replace(target)
+            fsutil.replace(tmp, target)
         if messages:
             state["groups"][group] = {
                 "summarized_text_messages": len(messages), "summary": summary,
@@ -202,7 +203,7 @@ def backfill_style_history(base, config, model):
             tmp = base / "runtime/style-profile.backfill.tmp"
             tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2))
             os.chmod(tmp, 0o600)
-            tmp.replace(target)
+            fsutil.replace(tmp, target)
         completed[group] = history_end
     return completed
 

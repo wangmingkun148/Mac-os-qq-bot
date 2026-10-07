@@ -4,20 +4,29 @@
 The implementation lives in small modules: ``snapshot`` (read QQ), ``messages`` (archive/tracking),
 ``llm`` + ``ai_client`` (the AI provider), ``style``/``proactive``/``imaging`` (features), ``engine`` (the
 poll/decide/send loop) and ``live_feed`` (status window data).
+
+On Windows the backend runs inside the ``winapp`` process (``python -m winapp``); this module keeps the
+command-line helpers (config check, style rebuild) and the shared start-up code.
 """
 from __future__ import annotations
 import argparse
-import fcntl
 import json
 import sys
 from pathlib import Path
 
 import config_check
-from engine import Engine, Native
+import fsutil
+from engine import Engine
 from live_feed import LiveFeed
 from llm import Model
+from procutil import InstanceLock
 from style import backfill_style_history, rebuild_style_profile
 import time
+
+
+def load_config(base: Path) -> dict:
+    """config.json with defaults applied (UTF-8, tolerating a byte-order mark added by some editors)."""
+    return config_check.apply_defaults(json.loads(fsutil.read_json_text(base / "config.json")))
 
 
 def refuse_config(base, errors):
@@ -27,7 +36,7 @@ def refuse_config(base, errors):
     status = {"state": "config_error", "message": message, "config_errors": errors,
               "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")}
     try:
-        (base / "runtime/status.json").write_text(json.dumps(status, ensure_ascii=False, indent=2))
+        (base / "runtime/status.json").write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
         feed = LiveFeed(base / "runtime/live.json")
         feed.set_engine(state="config_error", message=message, paused=True)
         feed.flush(force=True)
@@ -45,12 +54,12 @@ def main():
     parser.add_argument("--backfill-style-history", action="store_true")
     args = parser.parse_args()
     if args.check_config:
-        errors, warnings = config_check.check(config_check.apply_defaults(json.loads(args.check_config.read_text())))
+        errors, warnings = config_check.check(config_check.apply_defaults(json.loads(fsutil.read_json_text(args.check_config))))
         print(json.dumps({"errors": errors, "warnings": warnings}, ensure_ascii=False))
         return
     base = args.base.resolve()
     (base / "runtime").mkdir(exist_ok=True)
-    config = config_check.apply_defaults(json.loads((base / "config.json").read_text()))
+    config = load_config(base)
     errors, warnings = config_check.check(config)
     if errors:
         refuse_config(base, errors)
@@ -63,12 +72,21 @@ def main():
         counts = backfill_style_history(base, config, Model(base, config))
         print(json.dumps({"backfilled_groups": counts}, ensure_ascii=False))
         return
-    with (base / "runtime/bridge.lock").open("w") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return
-        Engine(base, config, Native(), config_warnings=warnings).run()
+    print("This module only offers command-line helpers. Start the Windows app with: python -m winapp", file=sys.stderr)
+    sys.exit(1)
+
+
+def run_engine(base: Path, config: dict, native, warnings=()):
+    """Run the reply engine in the calling thread until the native side sends ``shutdown``."""
+    lock = InstanceLock(base / "runtime/bridge.lock")
+    if not lock.acquire():
+        return False
+    try:
+        Engine(base, config, native, config_warnings=warnings).run()
+    finally:
+        lock.release()
+    return True
+
 
 if __name__ == "__main__":
     main()
