@@ -313,11 +313,44 @@ class App:
         if self.native:
             self.native.emit({"event": "paused", "paused": self.paused})
 
-    def request_proactive(self, group: str):
-        if self.paused or not self.backend_running or not group:
+    def request_proactive(self):
+        """主动发起话题: start a topic in the configured chat that QQ currently shows."""
+        if self.paused or not self.backend_running or self.native is None:
+            return
+        try:
+            snapshot = self.native.call("snapshot")
+        except Exception:
+            snapshot = {}
+        group = snapshot.get("activeConversation", "")
+        if group not in self.config.get("groups", []):
+            self.set_status("请先打开一个已配置的群聊")
             return
         self.native.emit({"event": "proactive_now", "group": group})
         self.set_status("已请求在当前群发起话题，写好后请选一条")
+
+    def diagnostics(self) -> dict:
+        """What the 诊断 page shows: is QQ there and readable, is the backend alive, are there permission mismatches."""
+        from . import uia, win32
+        windows = uia.top_level_windows("QQ.exe")
+        visible = [w for w in windows if w["title"] == "QQ" and w["visible"] and not w["minimized"]]
+        readable, detail = False, ""
+        if visible:
+            self.ensure_native()
+            try:
+                snapshot = self.native.call("snapshot")
+                readable = "error" not in snapshot
+                detail = snapshot.get("error", "")
+            except Exception as exc:
+                detail = type(exc).__name__
+        elif not visible:
+            detail = "没有找到可见的 QQ 主窗口（最小化或收在托盘里时读不到）"
+        qq_elevated = None
+        if windows:
+            qq_elevated = win32.process_elevated(windows[0]["pid"])
+        return {"qqRunning": bool(windows), "qqWindow": bool(visible), "qqReadable": readable, "readError": detail,
+                "backendAlive": self.backend_running, "appElevated": win32.process_elevated(os.getpid()),
+                "qqElevated": qq_elevated, "notifications": self.notify_sink is not None,
+                "qqPath": next((w["image"] for w in windows), "")}
 
     def choose_topic(self, index: int):
         if self.native:

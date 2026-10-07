@@ -737,7 +737,9 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
         snapshot = self.native.call("snapshot")
         data = parse_snapshot(snapshot, self.config)
         if data.get("error"):
-            labels = {"accessibility_permission": "需要开启辅助功能权限", "account_mismatch": "QQ 账号不是测试账号，已停止处理", "qq_window_missing": "等待 QQ 主窗口"}
+            labels = {"accessibility_permission": "没有权限读取 QQ 界面", "qq_window_missing": "等待 QQ 主窗口（没有最小化或收进托盘吧？）",
+                      "qq_content_unavailable": "QQ 界面暂时读不到，等待 QQ 窗口恢复",
+                      "account_mismatch": "没有在 QQ 顶部找到「本账号昵称」，已停止处理：请确认登录了对应账号，且设置里的昵称与 QQ 里显示的一致"}
             self.set_status(labels.get(data["error"], data["error"]), "waiting")
             # QQ 的辅助功能树是惰性开启的：退到后台后可能整个窗口都不再暴露，
             # 需要重新置前一次才会恢复。这里按退避策略尝试唤醒。

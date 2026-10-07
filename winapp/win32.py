@@ -203,6 +203,30 @@ def foreground_is(pid: int) -> bool:
     return bool(hwnd) and window_pid(hwnd) == pid
 
 
+def process_elevated(pid: int):
+    """True/False when the process runs with administrator rights, None when that cannot be told (access denied
+    usually means the process is elevated and we are not)."""
+    PROCESS_QUERY_LIMITED_INFORMATION, TOKEN_QUERY, TokenElevation = 0x1000, 0x0008, 20
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return None
+    token = wintypes.HANDLE()
+    try:
+        advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        if not advapi32.OpenProcessToken(handle, TOKEN_QUERY, ctypes.byref(token)):
+            return None
+        try:
+            elevation = wintypes.DWORD()
+            size = wintypes.DWORD()
+            if advapi32.GetTokenInformation(token, TokenElevation, ctypes.byref(elevation), ctypes.sizeof(elevation), ctypes.byref(size)):
+                return bool(elevation.value)
+            return None
+        finally:
+            kernel32.CloseHandle(token)
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 # --- typing detection --------------------------------------------------------------------------------------
 
 WH_KEYBOARD_LL = 13
