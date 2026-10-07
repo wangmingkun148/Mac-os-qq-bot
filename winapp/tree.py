@@ -132,8 +132,12 @@ def draft_text(tree: dict) -> str:
 
 
 def has_image_in_editor(tree: dict) -> bool:
+    """A picture (or other attachment) sits in the message box. QQ shows a pasted image as an
+    ``editor-el--inline-block`` element, not as an <img> the accessibility tree knows about."""
     editor = editor_node(tree)
-    return editor is not None and find(editor, lambda n: n.get("role") == "AXImage") is not None
+    if editor is None:
+        return False
+    return find(editor, lambda n: n.get("role") == "AXImage" or any(c.startswith("editor-el") for c in n.get("classes", ()))) is not None
 
 
 def message_images(node: dict) -> Iterator[dict]:

@@ -109,6 +109,48 @@ class TreeTests(unittest.TestCase):
             self.assertIs(listing["children"][index], row)
 
 
+class ViewTests(unittest.TestCase):
+    """winapp.qq.View works on the dumped tree alone, so it can be tested without QQ or COM."""
+
+    def setUp(self):
+        from winapp.qq import View
+        self.View = View
+        self.config = {"groups": ["测试群"], "reply_all_conversations": False}
+        self.messages = [message("7693942863185503147", "小明", "你好"), message("7693942907830551754", "小红", None, image="图片")]
+
+    def view(self, draft="", title="测试群", extra_editor_children=()):
+        tree = window(title, [conversation(title)], self.messages, draft=draft)
+        editor = T.editor_node(tree)
+        editor["children"] = list(extra_editor_children)
+        return self.View(tree, [], self.config)
+
+    def test_group_title_and_editor(self):
+        view = self.view()
+        self.assertEqual(view.group(), "测试群")
+        self.assertEqual(view.title(), "测试群")
+        self.assertFalse(view.draft_present())
+
+    def test_unconfigured_chat_is_not_a_group_to_act_in(self):
+        self.assertEqual(self.view(title="别的聊天").group(), "")
+
+    def test_draft_text_counts(self):
+        self.assertTrue(self.view(draft="写到一半").draft_present())
+
+    def test_pasted_picture_counts_even_without_text(self):
+        block = node(classes=["editor-el--inline-block"])
+        view = self.view(draft="￼\n​\n", extra_editor_children=[block])
+        self.assertTrue(view.has_image())
+        self.assertTrue(view.draft_present())
+
+    def test_message_row_and_picture_lookup(self):
+        view = self.view()
+        row = view.row("7693942907830551754")
+        self.assertIsNotNone(row)
+        self.assertEqual(view.picture(row)["desc"], "图片")
+        self.assertIsNone(view.picture(view.row("7693942863185503147")))
+        self.assertIsNone(view.row("1234567890123"))
+
+
 class ParseSnapshotTests(unittest.TestCase):
     def snapshot(self, tree):
         return {"tree": tree, "activeConversation": T.current_group(tree, CONFIG["groups"], False),

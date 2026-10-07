@@ -4,13 +4,17 @@ This is the Windows counterpart of the macOS app's ``BridgeAutomation.swift``: e
 operation of the backend protocol (``snapshot``, ``select``, ``send`` ...) with the same result shape and error
 codes, so the Python engine does not need to know which platform it runs on.
 
-All methods must be called from the worker thread that initialised COM (see ``winapp.worker``).
+Elements are located through a *view*: one cached read of the whole window (about 60 ms) that yields the dumped tree
+and the live UIA element behind every node. Live ``FindFirst`` cannot be used for this: it only searches UIA's
+control view, which leaves out the generic containers QQ's layout is made of (``aio``, ``ml-item``,
+``qq-msg-editor__root``). Views are cheap, so every step of an operation takes a fresh one instead of trusting
+elements that may have gone stale.
+
+All methods must be called from the worker thread that initialised COM (see ``winapp.native``).
 """
 from __future__ import annotations
 
 import os
-import re
-import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -18,14 +22,72 @@ from pathlib import Path
 from PIL import Image
 
 from . import clipboard, qqlaunch, tree as T, uia, win32
-from .uia import UIA
 
 NAV_MESSAGES = "消息"
-CONTROL_IMAGE, CONTROL_MENUITEM = 50006, 50011
+PICTURE_NAMES = ("图片", "动画表情", "表情")
 
 
 def squash(text: str) -> str:
     return "".join(str(text).split())
+
+
+class View:
+    """One read of the QQ window: the dumped tree plus the live UIA element behind every node."""
+
+    def __init__(self, tree: dict, elements: list, config: dict):
+        self.tree = tree
+        self.elements = elements
+        self.groups = config.get("groups", [])
+        self.all_conversations = bool(config.get("reply_all_conversations"))
+        self.editor_node = T.editor_node(tree)
+
+    def element(self, node):
+        index = None if node is None else node.get("_i")
+        return None if index is None else self.elements[index]
+
+    # the message box
+    def editor(self):
+        return self.element(self.editor_node)
+
+    def draft(self) -> str:
+        return (self.editor_node or {}).get("value", "")
+
+    def has_image(self) -> bool:
+        return T.has_image_in_editor(self.tree)
+
+    def draft_present(self) -> bool:
+        return bool(self.draft().strip()) or self.has_image()
+
+    # the open chat
+    def title(self) -> str:
+        header = T.find_class(self.tree, "chat-header__contact-name")
+        return (header or {}).get("desc", "")
+
+    def group(self) -> str:
+        """Key of the open chat: its title when configured (or ``chat:title`` when every chat is handled)."""
+        if self.editor_node is None:
+            return ""
+        title = self.title()
+        if not title or not (title in self.groups or self.all_conversations):
+            return ""
+        return T.conversation_key(title, self.groups)
+
+    def send_button(self):
+        return self.element(T.find_class(self.tree, "send-msg"))
+
+    def message_list(self):
+        return T.find_desc(self.tree, "消息列表")
+
+    # messages
+    def row(self, message_id: str):
+        return T.find(self.tree, lambda n: n.get("domId") == message_id and "ml-item" in n.get("classes", ()))
+
+    def picture(self, row_node):
+        """The photo/sticker of a message row (never the quoted picture inside a reply)."""
+        for image in T.message_images(row_node or {}):
+            if image.get("desc") in PICTURE_NAMES or "pic-element" in image.get("classes", ()):
+                return image
+        return None
 
 
 class QQ:
@@ -70,16 +132,34 @@ class QQ:
             windows = [w for w in windows if w["visible"]]
         return windows
 
+    def has_conversation_list(self, hwnd) -> bool:
+        """Is this QQ window the main window (the one with the conversation list)? QQ keeps several windows titled
+        "QQ" (hidden login/splash windows among them), so the title alone does not identify it."""
+        try:
+            return uia.find_first(uia.automation().ElementFromHandle(hwnd), name="会话列表") is not None
+        except Exception:
+            return False
+
     def find_window(self, allow_minimized=False):
-        """(hwnd, pid) of the QQ main window, or None. Hidden windows never count; minimised ones only on request."""
+        """(hwnd, pid) of the QQ main window, or None. Hidden windows never count; minimised ones only on request.
+        Once found, the main window is remembered, also while it is minimised."""
         if self._hwnd and win32.is_window(self._hwnd) and self.title_ok(uia.window_title(self._hwnd)) \
                 and win32.user32.IsWindowVisible(self._hwnd) and (allow_minimized or not win32.user32.IsIconic(self._hwnd)):
             return self._hwnd, self._pid
         candidates = [w for w in self.main_windows() if allow_minimized or not w["minimized"]]
         if not candidates:
-            self._hwnd = self._pid = 0
+            if not (self._hwnd and win32.is_window(self._hwnd)):
+                self._hwnd = self._pid = 0
             return None
-        best = max(candidates, key=lambda w: (w["rect"][2] - w["rect"][0]) * (w["rect"][3] - w["rect"][1]))
+        candidates.sort(key=lambda w: (w["normal"][2] - w["normal"][0]) * (w["normal"][3] - w["normal"][1]), reverse=True)
+        best = next((w for w in candidates if not w["minimized"] and self.has_conversation_list(w["hwnd"])), None)
+        if best is None and len(candidates) == 1:
+            best = candidates[0]
+        if best is None:
+            # no visible window shows the conversation list: a minimised main window (identified earlier) or nothing
+            best = next((w for w in candidates if w["hwnd"] == self._hwnd), None)
+        if best is None:
+            return None
         self._hwnd, self._pid = best["hwnd"], best["pid"]
         return self._hwnd, self._pid
 
@@ -103,14 +183,17 @@ class QQ:
         return {"ok": True}
 
     def wake(self) -> dict:
+        """Bring the QQ main window to the front (restoring it when minimised). A main window that QQ has hidden in
+        the tray cannot be told apart from QQ's other hidden "QQ" windows, so it is not forced to show: ``launch``
+        (starting QQ.exe again) is what makes a running QQ show it."""
         if self.user_typing():
             return {"error": "user_typing"}
-        windows = self.main_windows(visible_only=False)
-        if not windows:
+        if not self.qq_running():
             return {"error": "qq_not_running"}
-        window = max(windows, key=lambda w: (w["rect"][2] - w["rect"][0]) * (w["rect"][3] - w["rect"][1]))
-        self._hwnd, self._pid = window["hwnd"], window["pid"]
-        win32.bring_to_front(window["hwnd"])
+        found = self.find_window(allow_minimized=True)
+        if not found:
+            return {"error": "qq_hidden"}
+        win32.bring_to_front(found[0])
         return {"ok": True}
 
     def activate(self) -> bool:
@@ -142,33 +225,31 @@ class QQ:
         return bool(self._pid) and win32.foreground_is(self._pid)
 
     # ------------------------------------------------------------------ reading
-    def live_root(self):
-        found = self.find_window()
-        if not found:
-            return None
-        try:
-            return uia.automation().ElementFromHandle(found[0])
-        except Exception:
-            return None
-
-    def read_tree(self):
-        """Annotated tree dict of the window, or an error string."""
+    def view(self):
+        """A fresh View of the window, or an error string (``qq_window_missing`` / ``qq_content_unavailable``)."""
         found = self.find_window()
         if not found:
             return "qq_window_missing"
         try:
             root = uia.element_from_handle(found[0], uia.DUMP_PROPS)
+            elements: list = []
+            tree = uia.dump_tree(root, elements)
         except Exception:
             return "qq_content_unavailable"
-        tree = uia.dump_tree(root)
         if not tree.get("children"):
             return "qq_content_unavailable"
-        return T.annotate(tree)
+        return View(T.annotate(tree), elements, self.config)
+
+    def read_tree(self):
+        """Annotated tree dict of the window, or an error string."""
+        view = self.view()
+        return view if isinstance(view, str) else view.tree
 
     def snapshot(self) -> dict:
-        tree = self.read_tree()
-        if isinstance(tree, str):
-            return {"error": tree}
+        view = self.view()
+        if isinstance(view, str):
+            return {"error": view}
+        tree = view.tree
         groups, allconv = self.groups, self.all_conversations
         return {
             "tree": tree,
@@ -179,49 +260,10 @@ class QQ:
             "idleSeconds": min(self.shell.typing_seconds(), 1e6),
         }
 
-    # live element lookups ------------------------------------------------------------------------------------
-    def editor_element(self, root):
-        holder = uia.find_first(root, cls="qq-msg-editor__root")
-        if holder is None:
-            return None
-        kids = uia.live_children(holder)
-        return kids[0] if kids else None
-
-    def editor_text(self, editor) -> str:
-        try:
-            if "is-empty" in (editor.CurrentClassName or "").split():
-                return ""
-        except Exception:
-            pass
-        return uia.pattern_text(editor)
-
-    def editor_empty(self, editor) -> bool:
-        return not self.editor_text(editor).strip()
-
-    def editor_has_image(self, editor) -> bool:
-        return bool(uia.find_all(editor, ctype=CONTROL_IMAGE))
-
-    def draft_present(self, editor) -> bool:
-        return not self.editor_empty(editor) or self.editor_has_image(editor)
-
-    def title_live(self, root) -> str:
-        header = uia.find_first(root, cls="chat-header__contact-name")
-        return uia.name_of(header, cached=False) if header is not None else ""
-
-    def group_live(self, root) -> str:
-        """Key of the open chat (fast check without dumping the tree): title when configured, else ``chat:title``."""
-        title = self.title_live(root)
-        if not title:
-            return ""
-        key = T.conversation_key(title, self.groups)
-        return key if (title in self.groups or self.all_conversations) else ""
-
-    def group_checked(self) -> str:
-        """Key of the open chat, verified against the unique, visible conversation rows (slow path)."""
-        tree = self.read_tree()
-        if isinstance(tree, str):
-            return ""
-        return T.current_group(tree, self.groups, self.all_conversations)
+    def good_view(self):
+        """A fresh view, or None when the window cannot be read."""
+        view = self.view()
+        return None if isinstance(view, str) else view
 
     def row_rect(self, element):
         rect = uia.rect_of(element, cached=False)
@@ -242,32 +284,27 @@ class QQ:
     def select(self, name: str, force: bool = False) -> dict:
         if (self.shell.paused and not force) or self.shell.pending_send:
             return {"error": "paused_or_group_not_allowed"}
-        tree = self.read_tree()
-        if isinstance(tree, str):
-            return {"error": tree}
+        view = self.view()
+        if isinstance(view, str):
+            return {"error": view}
+        tree = view.tree
         rows = T.conversation_rows(tree, self.groups, self.all_conversations)
-        keys = {T.conversation_key(title, self.groups): (index, row) for title, index, row in rows}
+        keys = {T.conversation_key(title, self.groups): row for title, _, row in rows}
         if name not in keys:
             return {"error": "conversation_not_allowed"}
-        if T.editor_node(tree) is not None and T.current_group(tree, self.groups, self.all_conversations) == name:
+        if view.editor_node is not None and T.current_group(tree, self.groups, self.all_conversations) == name:
             return {"ok": True}
-        editor = T.editor_node(tree)
-        if editor is not None and (editor.get("value", "").strip() or T.has_image_in_editor(tree)):
+        if view.editor_node is not None and view.draft_present():
             return {"error": "draft_present"}
-        root = self.live_root()
-        if root is None:
-            return {"error": "qq_window_missing"}
-        listing = uia.find_first(root, name="会话列表")
-        if listing is None:
-            tab = uia.find_first(root, name=NAV_MESSAGES, ctype=50000)
-            if tab is not None:
-                return {"ok": uia.invoke(tab) or self.click_element(tab)}
+        if T.find_desc(tree, "会话列表") is None:
+            tab = T.find(tree, lambda n: n.get("role") == "AXButton" and n.get("desc") == NAV_MESSAGES)
+            element = view.element(tab)
+            if element is not None:
+                return {"ok": uia.invoke(element) or self.click_element(element)}
             return {"error": "open_qq_messages_tab"}
-        index = keys[name][0]
-        rows_live = uia.live_children(listing)
-        if index >= len(rows_live):
+        row = view.element(keys[name])
+        if row is None:
             return {"error": "group_not_in_visible_list"}
-        row = rows_live[index]
         if uia.invoke(row):
             return {"ok": True}
         if uia.is_offscreen(row):
@@ -281,18 +318,14 @@ class QQ:
     def capture_image(self, group: str, message_id: str = "", latest: bool = False, exclude=()) -> dict:
         if self.shell.paused or self.shell.pending_send or not group:
             return {"error": "image_context_changed"}
-        root = self.live_root()
-        if root is None or self.group_live(root) != group:
+        view = self.good_view()
+        if view is None or view.group() != group:
             return {"error": "image_context_changed"}
         mid = message_id
         if latest:
             excluded = set(exclude)
-            tree = self.read_tree()
-            if isinstance(tree, str):
-                return {"error": "image_context_changed"}
-            listing = T.find_desc(tree, "消息列表")
             candidates = []
-            for item in T.nodes(listing or {}):
+            for item in T.nodes(view.message_list() or {}):
                 dom = item.get("domId", "")
                 if T.is_message_id(dom) and dom not in excluded and "ml-item" in item.get("classes", ()):
                     own = T.find(item, lambda n: bool({"message-container--self", "container--self"} & set(n.get("classes", ()))))
@@ -303,20 +336,17 @@ class QQ:
             mid = candidates[-1]
         if not T.is_message_id(mid):
             return {"error": "image_unavailable"}
-        row = uia.find_first(root, cls="ml-item", aid=mid)
-        if row is None:
-            return {"error": "image_unavailable"}
-        picture = self.row_picture(row)
-        if picture is None:
+        row_node = view.row(mid)
+        picture_node = view.picture(row_node)
+        if row_node is None or picture_node is None:
             return {"error": "image_unavailable"}
         if self.user_typing():
             return {"error": "user_active_or_draft_present"}
-        editor = self.editor_element(root)
-        if editor is None or self.draft_present(editor):
+        if view.editor() is None or view.draft_present():
             return {"error": "user_active_or_draft_present"}
-        if not self.bring_into_view(root, row, picture):
+        if not self.bring_into_view(view, view.element(row_node), view.element(picture_node)):
             return {"error": "image_not_visible"}
-        rect = self.row_rect(picture)
+        rect = self.row_rect(view.element(picture_node))
         if not rect or rect[2] - rect[0] <= 10 or rect[3] - rect[1] <= 10:
             return {"error": "image_not_visible"}
         previous = clipboard.save()
@@ -326,20 +356,18 @@ class QQ:
             if not self.activate():
                 return {"error": "image_context_changed"}
             time.sleep(0.2)
-            root = self.live_root()
-            row = uia.find_first(root, cls="ml-item", aid=mid) if root is not None else None
-            picture = self.row_picture(row) if row is not None else None
-            if (self.shell.paused or not self.foreground_ok() or root is None or self.group_live(root) != group
-                    or picture is None):
+            view = self.good_view()
+            picture_node = view.picture(view.row(mid)) if view is not None else None
+            if self.shell.paused or not self.foreground_ok() or view is None or view.group() != group or picture_node is None:
                 return {"error": "image_context_changed"}
-            rect = self.row_rect(picture)
+            rect = self.row_rect(view.element(picture_node))
             if not rect:
                 return {"error": "image_not_visible"}
             win32.click((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2, right=True)
             item = None
             for _ in range(12):                    # the menu reaches the accessibility tree a moment after it appears
                 time.sleep(0.15)
-                item = self.find_menu_item(root, "复制")
+                item = self.find_copy_item()
                 if item is not None:
                     break
             if item is None:
@@ -375,39 +403,53 @@ class QQ:
             self.shell.pending_send = False
             self.finish_focus()
 
-    def bring_into_view(self, root, row, picture) -> bool:
+    def bring_into_view(self, view: View, row, picture) -> bool:
         """Make the centre of ``picture`` visible inside the message list (UIA reports a half-hidden element as
         on screen, and a click on the hidden half would hit the input box or toolbar)."""
-        view = self.row_rect(uia.find_first(root, name="消息列表") or picture)
+        listing = view.element(view.message_list())
+        area = self.row_rect(listing if listing is not None else picture)
         for attempt in range(8):
             rect = self.row_rect(picture)
-            if rect and view:
-                cx, cy = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
-                if view[0] < cx < view[2] and view[1] + 8 < cy < view[3] - 8 and not uia.is_offscreen(picture):
-                    return True
-                if attempt == 0:
-                    uia.scroll_into_view(row)
-                    time.sleep(0.25)
-                    continue
-                below = cy >= view[3] - 8
-                win32.scroll_wheel((view[0] + view[2]) // 2, (view[1] + view[3]) // 2, -3 if below else 3)
-                time.sleep(0.3)
-            else:
+            if not (rect and area):
                 return False
+            cx, cy = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
+            if area[0] < cx < area[2] and area[1] + 8 < cy < area[3] - 8 and not uia.is_offscreen(picture):
+                return True
+            if attempt == 0:
+                uia.scroll_into_view(row)
+                time.sleep(0.25)
+                continue
+            below = cy >= area[3] - 8
+            win32.scroll_wheel((area[0] + area[2]) // 2, (area[1] + area[3]) // 2, -3 if below else 3)
+            time.sleep(0.3)
         return False
 
-    def row_picture(self, row):
-        """The photo/sticker element of a message row (never the quoted picture inside a reply)."""
-        for image in uia.find_all(row, ctype=CONTROL_IMAGE):
-            if uia.name_of(image, cached=False) in ("图片", "动画表情", "表情") or "pic-element" in uia.class_of(image, cached=False):
-                return image
-        return None
-
-    def find_menu_item(self, root, label: str):
-        """The context-menu entry ``label``: searched in the QQ window first, then in every top-level QQ window."""
-        item = uia.find_first(root, name=label, ctype=CONTROL_MENUITEM)
-        if item is not None:
-            return item
+    def find_copy_item(self):
+        """The context-menu entry 复制: a live search first (menu items are controls), then the raw tree of the
+        QQ window, then any other QQ window (a menu may be a window of its own)."""
+        label = "复制"
+        root = None
+        found = self.find_window()
+        if found:
+            try:
+                root = uia.automation().ElementFromHandle(found[0])
+            except Exception:
+                root = None
+        if root is not None:
+            item = uia.find_first(root, name=label, ctype=50011)
+            if item is not None:
+                return item
+        view = self.good_view()
+        if view is not None:
+            list_node = view.message_list()
+            inside = {id(n) for n in T.nodes(list_node)} if list_node else set()
+            for node in T.nodes(view.tree):
+                if id(node) in inside:
+                    continue
+                if node.get("role") == "AXMenuItem" and node.get("desc") == label:
+                    return view.element(node)
+                if node.get("role") == "AXStaticText" and node.get("value") == label:
+                    return view.element(node)
         for window in uia.top_level_windows(self.process):
             if window["visible"] and window["hwnd"] != self._hwnd:
                 try:
@@ -417,7 +459,7 @@ class QQ:
                 item = uia.find_first(top, name=label)
                 if item is not None:
                     return item
-        return uia.find_first(root, name=label)
+        return uia.find_first(root, name=label) if root is not None else None
 
     def save_capture(self, image: Image.Image, message_id: str) -> dict:
         path = Path(self.shell.base) / "runtime" / f"image-{uuid.uuid4()}.jpg"
@@ -439,11 +481,9 @@ class QQ:
             return True
         return self.click_element(editor, at="caret")
 
-    def press_send(self, root, editor) -> bool:
-        button = uia.find_first(root, cls="send-msg")
-        if button is not None and uia.invoke(button):
-            return True
-        return False
+    def press_send(self, view: View) -> bool:
+        button = view.send_button()
+        return button is not None and uia.invoke(button)
 
     def clear_editor(self):
         """Select everything in the (focused) message box and delete it."""
@@ -455,16 +495,15 @@ class QQ:
         shell = self.shell
         if shell.paused or shell.pending_send or not group or not text or "\n" in text:
             return {"error": "send_not_allowed"}
-        root = self.live_root()
-        if root is None:
+        view = self.view()
+        if isinstance(view, str):
             return {"error": "qq_window_missing"}
-        editor = self.editor_element(root)
-        if editor is None:
+        if view.editor() is None:
             return {"error": "editor_unavailable"}
-        actual = self.group_live(root)
+        actual = view.group()
         if actual != group:
             return {"error": "wrong_conversation", "actual_group": actual}
-        if self.draft_present(editor):
+        if view.draft_present():
             return {"error": "draft_present"}
         if self.user_typing():
             return {"error": "user_typing"}
@@ -474,11 +513,11 @@ class QQ:
             if not self.activate():
                 return {"error": "activation_or_draft_changed"}
             time.sleep(0.35)
-            root = self.live_root()
-            editor = self.editor_element(root) if root is not None else None
-            if (shell.paused or editor is None or not self.foreground_ok() or self.group_live(root) != group
-                    or self.draft_present(editor)):
+            view = self.good_view()
+            if (shell.paused or view is None or view.editor() is None or not self.foreground_ok() or view.group() != group
+                    or view.draft_present()):
                 return {"error": "activation_or_draft_changed"}
+            editor = view.editor()
             if not self.focus_editor(editor):
                 return {"error": "focus_changed"}
             time.sleep(0.15)
@@ -487,22 +526,20 @@ class QQ:
             stage = "typed"
             win32.type_text(text)
             time.sleep(0.25)
-            root = self.live_root()
-            editor = self.editor_element(root) if root is not None else None
-            if (shell.paused or editor is None or not self.foreground_ok() or self.group_live(root) != group
-                    or self.editor_text(editor).strip() != text.strip()):
+            view = self.good_view()
+            if (shell.paused or view is None or view.editor() is None or not self.foreground_ok() or view.group() != group
+                    or view.draft().strip() != text.strip()):
                 self.discard_own_draft(group, text)
                 return {"error": "focus_or_draft_changed"}
-            self.focus_editor(editor)
+            self.focus_editor(view.editor())
             stage = "submitted"                # from here on the message may be on its way: never clear, never resend
-            if not self.press_send(root, editor):
+            if not self.press_send(view):
                 win32.press_key(win32.VK_RETURN)
             time.sleep(0.6)
-            root = self.live_root()
-            editor = self.editor_element(root) if root is not None else None
-            if root is None or editor is None or self.group_live(root) != group:
+            view = self.good_view()
+            if view is None or view.editor() is None or view.group() != group:
                 return {"submitted": True, "awaiting_readback": True}
-            if self.editor_empty(editor):
+            if not view.draft_present():
                 return {"ok": True, "submitted": True}
             return {"error": "text_still_in_editor"}
         except Exception as exc:
@@ -516,48 +553,46 @@ class QQ:
             shell.pending_send = False
             self.finish_focus()
 
-    def discard_own_draft(self, group: str, text: str):
-        """Remove what a failed send typed, but only while the box still holds our own text."""
+    def discard_own_draft(self, group: str, text: str, clear_all: bool = False):
+        """Remove what a failed send put into the message box. Text is only removed while it still is a prefix of
+        what we typed; ``clear_all`` is for a box that was verified empty before we started (a pasted picture)."""
         try:
-            root = self.live_root()
-            editor = self.editor_element(root) if root is not None else None
-            if editor is None or self.group_live(root) != group:
+            view = self.good_view()
+            if view is None or view.editor() is None or view.group() != group:
                 return
-            current = squash(self.editor_text(editor))
-            if current and squash(text).startswith(current) and self.foreground_ok():
-                self.focus_editor(editor)
+            current = squash(view.draft())
+            ours = view.draft_present() if clear_all else bool(current) and squash(text).startswith(current)
+            if ours and self.foreground_ok():
+                self.focus_editor(view.editor())
                 self.clear_editor()
-                self.log("cleared the partial text a failed send left in the message box")
+                self.log("cleared what a failed send left in the message box")
         except Exception as exc:  # best effort
-            self.log(f"could not clear partial text: {exc}")
+            self.log(f"could not clear the message box: {exc}")
 
     def clear_draft(self, group: str, expected: str) -> dict:
         if self.user_typing():
             return {"error": "user_typing"}
         if self.shell.pending_send or not expected:
             return {"error": "editor_unavailable"}
-        root = self.live_root()
-        editor = self.editor_element(root) if root is not None else None
-        if editor is None:
+        view = self.good_view()
+        if view is None or view.editor() is None:
             return {"error": "editor_unavailable"}
-        if self.group_live(root) != group:
+        if view.group() != group:
             return {"error": "wrong_conversation"}
-        if squash(self.editor_text(editor)) != squash(expected):
+        if squash(view.draft()) != squash(expected):
             return {"error": "draft_differs"}
         if not self.activate():
             return {"error": "clear_failed"}
         time.sleep(0.3)
-        root = self.live_root()
-        editor = self.editor_element(root) if root is not None else None
-        if editor is None or not self.focus_editor(editor):
+        view = self.good_view()
+        if view is None or view.editor() is None or not self.focus_editor(view.editor()):
             return {"error": "clear_failed"}
-        if squash(self.editor_text(editor)) != squash(expected):
+        if squash(view.draft()) != squash(expected):
             return {"error": "draft_differs"}
         self.clear_editor()
         time.sleep(0.3)
-        root = self.live_root()
-        editor = self.editor_element(root) if root is not None else None
-        if editor is None or not self.editor_empty(editor):
+        view = self.good_view()
+        if view is None or view.editor() is None or view.draft_present():
             return {"error": "clear_failed"}
         self.log("cleared the bot's stuck draft after an uncertain send")
         self.finish_focus()
@@ -573,11 +608,10 @@ class QQ:
         if (shell.paused or shell.pending_send or not group or len(text) > 120 or runtime not in file.parents
                 or file.suffix.lower() not in (".png", ".jpg", ".jpeg") or not file.is_file()):
             return {"error": "image_send_not_allowed"}
-        root = self.live_root()
-        editor = self.editor_element(root) if root is not None else None
-        if editor is None or self.group_live(root) != group:
+        view = self.good_view()
+        if view is None or view.editor() is None or view.group() != group:
             return {"error": "wrong_conversation"}
-        if self.draft_present(editor):
+        if view.draft_present():
             self.log("send_image refused: message box not empty")
             return {"error": "draft_present"}
         if self.user_typing():
@@ -595,18 +629,24 @@ class QQ:
             self.finish_focus()
             return result
 
+        def ready(check_empty=False):
+            """A fresh view when QQ is still in front, showing the right chat (and optionally an empty box)."""
+            current = self.good_view()
+            if (shell.paused or current is None or current.editor() is None or not self.foreground_ok()
+                    or current.group() != group or (check_empty and current.draft_present())):
+                return None
+            return current
+
         try:
             if not self.activate():
                 return finish({"error": "activation_or_draft_changed"})
             time.sleep(0.35)
-            root = self.live_root()
-            editor = self.editor_element(root) if root is not None else None
-            if (shell.paused or editor is None or not self.foreground_ok() or self.group_live(root) != group
-                    or self.draft_present(editor)):
+            view = ready(check_empty=True)
+            if view is None:
                 return finish({"error": "activation_or_draft_changed"})
-            self.focus_editor(editor)
+            self.focus_editor(view.editor())
             time.sleep(0.2)
-            if shell.paused or not self.foreground_ok() or self.group_live(root) != group:
+            if shell.paused or not self.foreground_ok() or ready() is None:
                 return finish({"error": "image_focus_changed"})
             # a bare "@name" leaves QQ's mention suggestion open, which swallows Return; a trailing space closes it
             typed = text + " " if text.startswith("@") and not text.endswith(" ") else text
@@ -621,37 +661,40 @@ class QQ:
             image_sequence = clipboard.sequence_number()
             stage = "pasted"
             win32.press_key(win32.VK_V, win32.VK_CONTROL)
-            time.sleep(5.0)                    # QQ needs a few seconds to take the picture
-            root = self.live_root()
-            editor = self.editor_element(root) if root is not None else None
-            if shell.paused or editor is None or not self.foreground_ok() or self.group_live(root) != group:
-                return finish({"error": "image_paste_context_changed"})
-            self.focus_editor(editor)
+            deadline = time.time() + 8.0       # QQ needs a moment to take the picture; poll instead of a fixed wait
+            view = None
+            while time.time() < deadline:
+                time.sleep(0.4)
+                view = ready()
+                if view is None:
+                    return finish({"error": "image_paste_context_changed"})
+                if view.has_image():
+                    break
+            time.sleep(0.8)                    # let QQ finish processing before Send (it ignores Send while busy)
+            self.focus_editor(view.editor())
             time.sleep(0.25)
-            root = self.live_root()
-            editor = self.editor_element(root) if root is not None else None
-            if shell.paused or editor is None or not self.foreground_ok() or self.group_live(root) != group:
+            view = ready()
+            if view is None:
                 return finish({"error": "image_send_context_changed"})
-            if not self.editor_has_image(editor):
+            if not view.has_image():
                 self.log("send_image: no picture appeared in the message box after pasting")
-                self.discard_own_draft(group, typed)
+                self.discard_own_draft(group, typed, clear_all=True)
                 return finish({"error": "image_paste_not_ready"})
-            newlines_before = self.editor_text(editor).count("\n")
+            newlines_before = view.draft().count("\n")
             stage = "submitted"
-            sent = self.press_send(root, editor)
+            sent = self.press_send(view)
             if not sent:
                 win32.press_key(win32.VK_RETURN)
             for attempt in (1, 2, 3):
                 time.sleep(3.0)
-                root = self.live_root()
-                editor = self.editor_element(root) if root is not None else None
-                if shell.paused or editor is None or not self.foreground_ok() or self.group_live(root) != group:
+                view = ready()
+                if view is None:
                     return finish({"error": "image_send_context_changed"})
-                if not self.draft_present(editor):
+                if not view.draft_present():
                     method = ("click" if sent else "return") if attempt == 1 else "return+retry"
                     self.log(f"send_image done: attempt {attempt}, {method}")
                     return finish({"ok": True, "submitted": True, "method": method})
-                added = self.editor_text(editor).count("\n") - newlines_before
+                added = view.draft().count("\n") - newlines_before
                 self.log(f"send_image attempt {attempt} did not send")
                 if added > 0:
                     for _ in range(min(added, 10)):
@@ -659,13 +702,15 @@ class QQ:
                 if attempt == 3:
                     return finish({"error": "image_newline_instead_of_send" if added > 0 else "image_still_in_editor"})
                 time.sleep(4.0)
-                root = self.live_root()
-                editor = self.editor_element(root) if root is not None else None
-                if shell.paused or editor is None or not self.foreground_ok() or self.group_live(root) != group:
+                view = ready()
+                if view is None:
                     return finish({"error": "image_send_context_changed"})
-                self.focus_editor(editor)
+                self.focus_editor(view.editor())
                 time.sleep(0.25)
-                if not self.press_send(root, editor):
+                view = ready()
+                if view is None:
+                    return finish({"error": "image_send_context_changed"})
+                if not self.press_send(view):
                     win32.press_key(win32.VK_RETURN)
             return finish({"error": "image_still_in_editor"})
         except Exception as exc:

@@ -253,14 +253,17 @@ DUMP_PROPS = (P_NAME, P_CONTROL_TYPE, P_AUTOMATION_ID, P_CLASS_NAME, P_BOUNDS, P
 MAX_DEPTH = 42
 
 
-def dump_tree(root_element) -> dict:
+def dump_tree(root_element, elements: list | None = None) -> dict:
     """Walk a cached subtree into nested dicts: role/desc/value/domId/classes/children.
 
     * ``Text`` controls carry their text in ``value`` (like AXStaticText), everything else puts ``Name`` in
       ``desc`` (like AXDescription).
-    * Edit/Document controls expose their current text as ``value`` (the editor draft).
+    * The message editor exposes its current text as ``value`` (the draft).
+    * With ``elements`` (a list), every node also gets ``_i``: the index of its live UIA element in that list.
+      Live ``FindFirst``/``FindAll`` only see the *control view*, which leaves out generic containers such as QQ's
+      ``aio``, ``ml-item`` and ``qq-msg-editor__root``; the cached raw tree has all of them.
     """
-    return _dump(root_element, 0)
+    return _dump(root_element, 0, elements)
 
 
 EDITOR_CLASS = "ExEditor-qq-msg-editor"      # the ProseMirror message box at the bottom of a chat
@@ -277,10 +280,13 @@ def pattern_text(element) -> str:
         return ""
 
 
-def _dump(element, depth):
+def _dump(element, depth, elements=None):
     ctype = type_of(element)
     name = name_of(element)
     node = {"role": ROLE_BY_TYPE.get(ctype, "AXGroup")}
+    if elements is not None:
+        node["_i"] = len(elements)
+        elements.append(element)
     if ctype == T_TEXT:
         if name:
             node["value"] = name
@@ -299,7 +305,7 @@ def _dump(element, depth):
     if rect and rect[2] > rect[0] and rect[3] > rect[1]:
         node["rect"] = rect
     if depth < MAX_DEPTH:
-        kids = [_dump(child, depth + 1) for child in children(element)]
+        kids = [_dump(child, depth + 1, elements) for child in children(element)]
         if kids:
             node["children"] = kids
     return node
@@ -340,8 +346,22 @@ def window_class(hwnd) -> str:
     return buffer.value
 
 
+class WINDOWPLACEMENT(ctypes.Structure):
+    _fields_ = [("length", wintypes.UINT), ("flags", wintypes.UINT), ("showCmd", wintypes.UINT),
+                ("ptMinPosition", wintypes.POINT), ("ptMaxPosition", wintypes.POINT), ("rcNormalPosition", wintypes.RECT)]
+
+
+def normal_rect(hwnd) -> tuple:
+    """Where the window sits when it is neither minimised nor maximised (its real size, also while minimised)."""
+    placement = WINDOWPLACEMENT(length=ctypes.sizeof(WINDOWPLACEMENT))
+    if user32.GetWindowPlacement(hwnd, ctypes.byref(placement)):
+        r = placement.rcNormalPosition
+        return (r.left, r.top, r.right, r.bottom)
+    return (0, 0, 0, 0)
+
+
 def top_level_windows(image_name: str = "QQ.exe") -> list[dict]:
-    """Visible top-level windows owned by a process whose executable is ``image_name``."""
+    """Top-level windows (visible or not) owned by a process whose executable is ``image_name``."""
     found = []
 
     def callback(hwnd, _):
@@ -353,7 +373,7 @@ def top_level_windows(image_name: str = "QQ.exe") -> list[dict]:
             user32.GetWindowRect(hwnd, ctypes.byref(rect))
             found.append({"hwnd": hwnd, "pid": pid.value, "title": window_title(hwnd), "cls": window_class(hwnd),
                           "visible": bool(user32.IsWindowVisible(hwnd)), "minimized": bool(user32.IsIconic(hwnd)),
-                          "rect": (rect.left, rect.top, rect.right, rect.bottom), "image": image})
+                          "rect": (rect.left, rect.top, rect.right, rect.bottom), "normal": normal_rect(hwnd), "image": image})
         return True
 
     user32.EnumWindows(WNDENUMPROC(callback), 0)
