@@ -1,29 +1,39 @@
-# 开源版交接
+# Windows 版交接
 
 ## 范围
 
-本机目录属于独立 opensource 分支，GitHub 默认分支为 main。只含公开代码和通用资源，不读取或复制私人版的 config、runtime、记录、摘要、角色和表情。构建产物和运行文件不进入 Git。公共发布使用此分支的一次干净初始提交，无私人版历史。
+本分支（windows-port）把 macOS 版重构为 Windows 版：Python 后台基本不变，外壳从 Swift 换成 Python（UI Automation + 托盘 + 本地网页界面）。只含公开代码和通用资源，不读取或复制私人版的 config、runtime、记录、摘要、角色和表情。构建产物和运行文件不进入 Git。
 
 ## 架构
 
-SwiftUI 菜单栏与设置位于 Sources/UI；QQBridge 和 BridgeAutomation 负责辅助功能读取、图片复制、会话切换和发送确认；QQSpace 复用 QQ 内置空间浏览器。应用标识 io.github.wangmingkun148.qqchatbridge，最低系统版本声明 14.0，带通用聊天图标，独立保存 UI 偏好及文件夹书签。项目文件不可读时请求选择真实解压目录并保存书签，避免 App Translocation 下依赖临时只读父目录。移除会转存完整 QQ 界面的 probe 入口。
+Python 后台（bridge/engine/llm/…）通过一个 `native` 对象读写 QQ：`native.events`（队列，收 paused/configure/proactive_now… 事件）和 `native.call(op, **kwargs)`（snapshot、select、send、send_image、capture_image、capture_latest_image、clear_draft、wake、launch、typing、status、pause、notify、resume）。macOS 版里 native 是 stdin/stdout 上的 JSON 管道，Windows 版是进程内的 `winapp.native.WinNative`。
 
-Python 标准库后台由 bridge.py 启动；engine 与各 mixin 负责消息去重、会话队列、总结、主动话题、交付确认和状态；ai_client 与 llm 只使用 config.ai 的一个 OpenAI 兼容 Chat Completions 模型。所有文本/视觉任务及浏览器、空间、总结、压缩、反馈、审核共用该配置。imaging 使用独立图片生成配置。
+- `winapp/uia.py`：comtypes 调 UI Automation。QQ NT 是 Electron，Chromium 把 HTML 的 aria-label/文本 → Name、class → ClassName、id → AutomationId，所以 `dump_tree` 产出与 macOS 辅助功能快照相同形状的 JSON，`snapshot.parse_snapshot` 原样复用。聊天输入框（ProseMirror，类名 `ExEditor-qq-msg-editor`）映射为 AXTextArea，值取自 TextPattern，标题取自会话头部。
+- `winapp/tree.py`：对 dump 出的树做会话/标题/输入框的纯 Python 计算（可单测）。
+- `winapp/qq.py`：各 op 的实现。发送文字：激活 → 聚焦输入框 → Unicode 键盘事件 → 点“发送”按钮（InvokePattern，失败再回车）→ 回读。取图：右键 → “复制” → 读剪贴板；发图：写剪贴板 → Ctrl+V → 点发送。错误码与 macOS 版一致（引擎据此判断“发送不确定→暂停且不重发”）。
+- `winapp/win32.py`：SendInput、前台窗口、键盘钩子（用户是否正在打字，忽略自己注入的按键）。`winapp/clipboard.py`：剪贴板读写与保存还原。**剪贴板不能设属主窗口**：属主要响应 WM_DESTROYCLIPBOARD，我们的线程不泵消息，会让其他程序复制时卡死。
+- `winapp/native.py`：UIA 与输入注入只在一个工作线程（COM 单元）里串行执行。
+- `winapp/app.py`：配置读写、引擎线程生命周期、开始/暂停、诊断。`winapp/shell.py`：托盘（pystray）与窗口宿主（Edge/Chrome `--app` + `--inprivate`，不登录不同步）。`winapp/webui.py`：只绑 127.0.0.1、要求每次运行随机令牌的 HTTP 服务；`winapp/ui/`：面板、状态窗、设置页（原样移植 SwiftUI 界面，像素字体与配色）。
+- `winapp/qqlaunch.py`：以防休眠参数启动/重启 QQ，检测运行中的 QQ 是否带参数。
 
-config.example.json 不含真实账号或凭据；首次应用启动复制为权限 0600 的 config.json；账号与群名为空，界面只显示灰色提示。未完成配置不启动后台、不允许开始；保存时校验实际值，首次保存会启动后台。网页、全会话回复、自动主动话题、生图、空间定时及桌宠默认关闭。Python 支持 3.9+，优先从项目 .venv、系统 Python 和常见安装目录查找，也支持手动指定路径。
+后台的 Windows 兼容修补：`procutil.InstanceLock`（替代 fcntl）、`fsutil.replace`（Windows 下 os.replace 遇共享冲突重试）、`image_prep`（Pillow 替代 sips）、文本读写显式 UTF-8、`temporal_relevance` 无 tzdata 时退回 UTC+8、`launch` op 替代 `open -a`。
 
 ## 逻辑与数据
 
-主群优先；可选监听其他可见会话，模型自主判断是否接话。归档、近期历史和记忆按会话隔离，长期表达摘要可共享。新图片通过 QQ 复制后传给原生多模态模型；失败不猜测。发送需回读确认，状态不明确时暂停。设置热更新等当前任务结束，后缀开关使用最新配置；后台重启有独立按钮。
+主群优先；可选监听其他可见会话，模型自主判断是否接话。归档、近期历史和记忆按会话隔离，长期表达摘要可共享。新图片通过 QQ 复制后传给多模态模型；失败不猜测。发送需回读确认，状态不明确时暂停。设置热更新等当前任务结束，后缀开关使用最新配置。
 
-运行数据仅存 config.json 和 runtime/，发布打包须按已提交公开文件清单生成，不能直接打包使用中的整个文件夹。AI 接口会接收当前任务需要的聊天内容、摘要、网页或图片。浏览器为可选 Playwright 自带 Chromium，不依赖系统 Chrome，未安装时部分网页仅通过 Jina Reader 读取文字。
+运行数据仅存 config.json 和 runtime/，发布包按 `build.ps1` 生成，不包含使用中的文件夹。
 
 ## 限制与待验证
 
-项目使用 ChatGPT、Claude AI 等生成式 AI 辅助制作。建议 macOS 26+；构建目标 macOS 14+ 不表示较早系统已实测。仅在作者个人电脑测试，其他电脑可能不稳定或无法运行。
-
-QQ UI 和系统权限会影响可靠性；重建临时签名可能使授权失效。会话键使用显示名称，重名、改名或不可见列表有局限。API 服务需支持多模态和约定 JSON 输出；供应商专有协议不自动适配。Intel 应在本机编译；arm64 包未公证。图片生成成功后仍很可能无法自动发到 QQ，README 与发布页明确标注谨慎使用；新用户真实 QQ 收发、生图和空间需要用其本人账号/供应商配置验证，不能将构建成功描述为所有环境兼容。
+- **Chromium 窗口被完全盖住时不更新界面树**（用 Edge 验证过：不带 `CalculateNativeWinOcclusion` 开关时读到旧内容，带开关后实时）。真实 QQ 需用 `qqlaunch` 的参数启动；该参数能否被 QQ NT 接受需在真实 QQ 上确认。
+- 真实 QQ 上尚未验证的点：右键“复制”菜单的 UIA 结构（代码会在整个 QQ 窗口及其他 QQ 顶层窗口里按名称找“复制”）、发送按钮与回车的行为、@ 提示框、不同 QQ 版本的类名变化。端到端测试用的是 `tools/fake_qq` 仿真页面，不等于真实 QQ。
+- 会话键使用显示名称，重名、改名或不可见列表有局限。
+- QQ 以管理员身份运行时，本程序也要以管理员身份运行。
+- 未移植：桌宠、QQ 空间。
+- API 服务需支持多模态和约定 JSON 输出；供应商专有协议不自动适配。
+- 图片生成成功后仍很可能无法自动发到 QQ，README 明确标注谨慎使用。
 
 ## 构建与资源
 
-zsh build.sh 按本机架构编译 macOS 14+ 应用；基本后台无需额外 Python 包。浏览器依赖见 requirements-browser.txt。代码采用 MIT；Ark Pixel 字体保留其 OFL 声明。README 和注释只解释功能，不记录开发流水。
+`build.ps1`：PyInstaller 一个文件夹（`--python-option "X utf8"`，带 `comtypes.gen`）。浏览器依赖见 requirements-browser.txt，Windows 依赖见 requirements-windows.txt。代码采用 MIT；Ark Pixel 字体保留其 OFL 声明（winapp/ui/ArkPixel-OFL.txt）。README 和注释只解释功能，不记录开发流水。

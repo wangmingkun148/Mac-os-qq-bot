@@ -125,7 +125,7 @@ class ProactiveMixin:
         self.live.step(turn, "choosing", f"写好了 {len(options)} 条，等你选")
         self._publish_preview()
         self.log(f"话题预览已生成：群={group} 共 {len(options)} 条：" + " ／ ".join(item["reply"] for item in options)[:300])
-        self.notify("话题预览已生成", f"{len(options)} 条开场，点开菜单栏图标选一条发（也可以都不发）")
+        self.notify("话题预览已生成", f"{len(options)} 条开场，点开托盘图标选一条发（也可以都不发）")
         self.set_status("话题预览已生成，等你选一条", "waiting")
 
     def _publish_preview(self):

@@ -70,7 +70,7 @@ class Native:
                 print(json.dumps({"id": ident, "op": op, **kwargs}, ensure_ascii=False), flush=True)
             except BrokenPipeError:
                 self.pending.pop(ident, None)
-                raise RuntimeError("菜单栏主程序连接已断开")
+                raise RuntimeError("界面主程序连接已断开")
         try:
             return q.get(timeout=self.TIMEOUTS.get(op, 12))
         except queue.Empty:
@@ -172,7 +172,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
             "image_moderation_calls", "image_generation_calls", "verified_images", "style_summary_calls",
             "verified_replies", "input_tokens", "output_tokens")}
         return {
-            "state": "paused", "message": "已暂停；点击菜单栏图标，再点「开始」", **counters, "groups": c["groups"],
+            "state": "paused", "message": "已暂停；点击托盘图标，再点「开始」", **counters, "groups": c["groups"],
             "image_load_wait_seconds": IMAGE_LOAD_SECONDS, "secondary_chat_image_wait_seconds": 3,
             "model": c.get("ai", {}).get("model", ""),
             "message_archive": str(self.archive.path.relative_to(self.base)), "archived_messages": self.archive.count,
@@ -545,7 +545,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
             self.set_status("模型调用失败，60 秒后重试：" + str(exc)[:100], "model_error")
 
     def notify(self, title, text):
-        """A macOS notification through the native app (best effort)."""
+        """A desktop notification through the native shell (best effort)."""
         try:
             self.native.call("notify", title=title, text=text)
         except Exception:
@@ -628,7 +628,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
         return typing
 
     def wake_qq(self, now):
-        """把 QQ 置前一次以唤醒它的辅助功能树；连续无效时按退避放宽间隔，避免反复抢焦点。"""
+        """把 QQ 置前一次以唤醒它的界面树；连续无效时按退避放宽间隔，避免反复抢焦点。"""
         if now - self.last_wake < self.wake_interval:
             return
         if self.user_typing(now):
@@ -741,7 +741,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
                       "qq_content_unavailable": "QQ 界面暂时读不到，等待 QQ 窗口恢复",
                       "account_mismatch": "没有在 QQ 顶部找到「本账号昵称」，已停止处理：请确认登录了对应账号，且设置里的昵称与 QQ 里显示的一致"}
             self.set_status(labels.get(data["error"], data["error"]), "waiting")
-            # QQ 的辅助功能树是惰性开启的：退到后台后可能整个窗口都不再暴露，
+            # QQ 的界面树是惰性开启的：最小化或被完全盖住后可能整个窗口都不再暴露，
             # 需要重新置前一次才会恢复。这里按退避策略尝试唤醒。
             if data["error"] == "qq_window_missing":
                 self.wake_qq(now)
