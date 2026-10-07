@@ -51,7 +51,7 @@ def response_schema(base, task):
     if task == "reply":
         return REPLY_SCHEMA
     path = prompt_path(base, f"{task}-schema.json")
-    return json.loads(path.read_text()) if path.is_file() else None
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
 
 
 def schema_instruction(schema):

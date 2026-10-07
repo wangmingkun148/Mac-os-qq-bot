@@ -20,7 +20,7 @@ VERSIONS_KEPT = 5
 
 def load_ratings(base):
     try:
-        data = json.loads((Path(base) / "runtime/reply-feedback.json").read_text())
+        data = json.loads((Path(base) / "runtime/reply-feedback.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
     return {k: v for k, v in data.items() if isinstance(v, dict) and v.get("rating") in ("up", "down") and str(v.get("reply", "")).strip()}
@@ -31,7 +31,7 @@ TOPIC_PREFERENCES = "topic-preferences.json"
 
 def load_preferences(base, name="owner-preferences.json"):
     try:
-        data = json.loads((Path(base) / "runtime" / name).read_text())
+        data = json.loads((Path(base) / "runtime" / name).read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError):
         return {}
@@ -40,7 +40,7 @@ def load_preferences(base, name="owner-preferences.json"):
 def save_preferences(base, data, name="owner-preferences.json"):
     path = Path(base) / "runtime" / name
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     os.chmod(tmp, 0o600)
     fsutil.replace(tmp, path)
 
@@ -67,7 +67,7 @@ def known_names(base, config, items):
     the rated conversations, the account's own names and the chat titles."""
     names = set(config.get("self_names", [])) | set(config.get("groups", []))
     try:
-        data = json.loads((Path(base) / "runtime/people.json").read_text())
+        data = json.loads((Path(base) / "runtime/people.json").read_text(encoding="utf-8"))
         for person in data.get("people", []):
             names.update(person.get("names", []))
             names.add(person.get("call_as", ""))

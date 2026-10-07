@@ -1,11 +1,14 @@
 """Check whether a source date can support a current claim."""
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 import re
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
-CHAT_TIMEZONE = ZoneInfo("Asia/Shanghai")
+try:
+    CHAT_TIMEZONE = ZoneInfo("Asia/Shanghai")
+except ZoneInfoNotFoundError:           # Windows ships no IANA database unless the tzdata package is installed
+    CHAT_TIMEZONE = timezone(timedelta(hours=8))
 
 
 CURRENT_WORDS = re.compile(r"现在|目前|今天|近日|最近|近期|本周|本月|今年|最新|当下|正在|还在|即将|现已|today|current(?:ly)?|latest|upcoming", re.I)

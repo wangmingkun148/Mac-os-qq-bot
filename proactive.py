@@ -46,7 +46,7 @@ def link_only_topic(reply, url):
 def proactive_history(base, group, limit=12):
     path = base / "runtime/proactive-history.jsonl"
     try:
-        records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     except (OSError, json.JSONDecodeError):
         return []
     return [item for item in records if item.get("group") == group][-limit:]
@@ -58,7 +58,7 @@ def record_proactive(base, job):
               "at": time.strftime("%Y-%m-%d %H:%M:%S")}
     if job.get("shape"):
         record["shape"] = job["shape"]
-    with path.open("a") as handle:
+    with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     os.chmod(path, 0o600)
 
@@ -231,7 +231,7 @@ def _state_path(base):
 
 def load_topic_state(base, group):
     try:
-        return dict(json.loads(_state_path(base).read_text()).get(group, {}))
+        return dict(json.loads(_state_path(base).read_text(encoding="utf-8")).get(group, {}))
     except (OSError, json.JSONDecodeError, AttributeError):
         return {}
 
@@ -239,13 +239,13 @@ def load_topic_state(base, group):
 def save_topic_state(base, group, state):
     path = _state_path(base)
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         data = data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError):
         data = {}
     data[group] = state
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1))
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     os.chmod(tmp, 0o600)
     fsutil.replace(tmp, path)
 
@@ -257,7 +257,7 @@ def outcomes_path(base):
 
 def load_outcomes(base):
     try:
-        data = json.loads(outcomes_path(base).read_text())
+        data = json.loads(outcomes_path(base).read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError):
         return {}
@@ -269,7 +269,7 @@ def save_outcome(base, key, record):
     for old in sorted(data, key=lambda k: data[k].get("time", 0))[:-400]:
         del data[old]
     tmp = outcomes_path(base).with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1))
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     os.chmod(tmp, 0o600)
     fsutil.replace(tmp, outcomes_path(base))
 

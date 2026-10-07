@@ -78,7 +78,7 @@ def extend_style_summary(previous, additions, other="", max_chars=1999):
 
 def load_style_profile(base, group, max_chars=1999):
     try:
-        state = json.loads((base / "runtime/style-profile.json").read_text())
+        state = json.loads((base / "runtime/style-profile.json").read_text(encoding="utf-8"))
         entry = state.get("groups", {}).get(group, {})
         pieces = [entry.get("historical_summary", ""), entry.get("summary", "")]
         return "\n\n".join(piece.strip() for piece in pieces if isinstance(piece, str) and piece.strip())[:min(max_chars, 1999)]
@@ -136,7 +136,7 @@ def load_group_context(base, config, group=None):
     if not path:
         return ""
     try:
-        text = (base / path).read_text()
+        text = (base / path).read_text(encoding="utf-8")
     except OSError:
         return ""
     start = text.find("## 一、")
@@ -163,7 +163,7 @@ def rebuild_style_profile(base, config, model):
             }
             target = base / "runtime/style-profile.json"
             tmp = base / "runtime/style-profile.rebuild.tmp"
-            tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2))
+            tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
             os.chmod(tmp, 0o600)
             fsutil.replace(tmp, target)
         if messages:
@@ -179,7 +179,7 @@ def rebuild_style_profile(base, config, model):
 def backfill_style_history(base, config, model):
     target = base / "runtime/style-profile.json"
     try:
-        state = json.loads(target.read_text())
+        state = json.loads(target.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         state = {"groups": {}}
     batch_size = config.get("style_summary_every", 100)
@@ -201,7 +201,7 @@ def backfill_style_history(base, config, model):
             entry["historical_summarized_text_messages"] = start + len(batch)
             entry["historical_updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
             tmp = base / "runtime/style-profile.backfill.tmp"
-            tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2))
+            tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
             os.chmod(tmp, 0o600)
             fsutil.replace(tmp, target)
         completed[group] = history_end

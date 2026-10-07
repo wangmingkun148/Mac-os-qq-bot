@@ -21,7 +21,7 @@ class ImageQuota:
 
     def _load(self):
         try:
-            data = json.loads(self.path.read_text())
+            data = json.loads(self.path.read_text(encoding="utf-8"))
             return data if isinstance(data, dict) else {}
         except (OSError, json.JSONDecodeError):
             return {}
@@ -44,7 +44,7 @@ class ImageQuota:
             data = self._load()
             data[sender] = [value for value in data.get(sender, []) if isinstance(value, (int, float)) and value > cutoff] + [now]
             tmp = self.path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
             os.chmod(tmp, 0o600)
             fsutil.replace(tmp, self.path)
 

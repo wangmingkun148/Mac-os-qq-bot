@@ -110,7 +110,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
         self.next_feedback_check = 0
         self.style_state_path = base / "runtime/style-profile.json"
         try:
-            self.style_state = json.loads(self.style_state_path.read_text())
+            self.style_state = json.loads(self.style_state_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             self.style_state = {"groups": {}}
         self.paused = True
@@ -135,7 +135,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
         self.prepared_images = collections.defaultdict(dict)
         self.conversations_path = base / "runtime/conversations.json"
         try:
-            self.conversation_details = json.loads(self.conversations_path.read_text())
+            self.conversation_details = json.loads(self.conversations_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             self.conversation_details = {}
         self.visible_conversations = list(config["groups"])
@@ -184,7 +184,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
             self.status["baseline_groups"] = sorted(self.tracker.initialized)
             self.status["archived_messages"] = self.archive.count
             tmp = self.base / "runtime/status.tmp"
-            tmp.write_text(json.dumps(self.status, ensure_ascii=False, indent=2))
+            tmp.write_text(json.dumps(self.status, ensure_ascii=False, indent=2), encoding="utf-8")
             fsutil.replace(tmp, self.base / "runtime/status.json")
         self.live.flush()
 
@@ -231,7 +231,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
         try:
             if path.exists() and path.stat().st_size > LOG_LIMIT_BYTES:
                 fsutil.replace(path, path.with_name("bridge.log.1"))  # keep one previous generation
-            with path.open("a") as handle:
+            with path.open("a", encoding="utf-8") as handle:
                 handle.write(line)
         except OSError:
             pass
@@ -681,7 +681,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
                 dirty = True
         if dirty:
             tmp = self.conversations_path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(self.conversation_details, ensure_ascii=False, indent=2))
+            tmp.write_text(json.dumps(self.conversation_details, ensure_ascii=False, indent=2), encoding="utf-8")
             os.chmod(tmp, 0o600)
             fsutil.replace(tmp, self.conversations_path)
         self.status["conversations"] = self.conversation_details

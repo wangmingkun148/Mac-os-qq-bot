@@ -23,7 +23,7 @@ def load_people(base):
         return []
     if _cache.get("stamp") != (path, stamp):
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
             people = [p for p in data.get("people", []) if isinstance(p, dict)]
         except (OSError, json.JSONDecodeError, AttributeError):
             people = []

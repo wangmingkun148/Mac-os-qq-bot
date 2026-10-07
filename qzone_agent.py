@@ -6,6 +6,7 @@ import tempfile
 import urllib.parse
 import urllib.request
 from pathlib import Path
+import fsutil
 from image_prep import save_jpeg
 from llm import Model
 from style import load_style_profile
@@ -38,7 +39,7 @@ def download_image(url, directory, index):
 
 def prepare_posts(base, posts, directory):
     history = base / "runtime/qzone-actions.json"
-    records = json.loads(history.read_text()) if history.exists() else []
+    records = json.loads(history.read_text(encoding="utf-8")) if history.exists() else []
     handled = {record.get("id") for record in records}
     usable, images = [], []
     reason = "暂无未处理的可读动态"
@@ -83,7 +84,7 @@ def choose(base, posts, recent):
 
 
 def generate(base, usable, recent, images):
-    config = json.loads((base / "config.json").read_text())
+    config = json.loads(fsutil.read_json_text(base / "config.json"))
     group = config.get("groups", [""])[0]
     payload = {"current_date": today(), "posts": usable, "recent_comments": recent[-12:],
                "style_profile": load_style_profile(base, group, config.get("style_profile_max_chars", 1999)),
@@ -112,10 +113,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     base = Path(args.base)
     try:
-        job = json.loads(Path(args.input).read_text())
+        job = json.loads(Path(args.input).read_text(encoding="utf-8"))
         output = {"ok": True, "action": choose(base, job["posts"], job.get("recent", []))}
     except Exception as exc:
         output = {"ok": False, "error": str(exc)[:300]}
     target = Path(args.output)
-    target.write_text(json.dumps(output, ensure_ascii=False))
+    target.write_text(json.dumps(output, ensure_ascii=False), encoding="utf-8")
     os.chmod(target, 0o600)

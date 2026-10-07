@@ -183,7 +183,7 @@ class LiveFeed:
             data = json.dumps(self.snapshot(), ensure_ascii=False)
         tmp = self.path.with_suffix(".tmp")
         try:
-            tmp.write_text(data)
+            tmp.write_text(data, encoding="utf-8")
             os.chmod(tmp, 0o600)
             fsutil.replace(tmp, self.path)
         except OSError:

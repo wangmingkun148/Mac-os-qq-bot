@@ -12,7 +12,7 @@ import fsutil
 class StyleMixin:
     def save_style_state(self):
         tmp = self.base / "runtime/style-profile.tmp"
-        tmp.write_text(json.dumps(self.style_state, ensure_ascii=False, indent=2))
+        tmp.write_text(json.dumps(self.style_state, ensure_ascii=False, indent=2), encoding="utf-8")
         os.chmod(tmp, 0o600)
         fsutil.replace(tmp, self.style_state_path)
 

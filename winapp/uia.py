@@ -141,13 +141,20 @@ def element_from_handle(hwnd: int, props: tuple, scope=None):
 
 def find_all(root, **conditions):
     """Live search below ``root`` for elements whose Name/ClassName/AutomationId/ControlType match."""
-    cond = _condition(conditions)
-    array = root.FindAll(UIA.TreeScope_Descendants, cond)
-    return [array.GetElement(i) for i in range(array.Length)]
+    try:
+        array = root.FindAll(UIA.TreeScope_Descendants, _condition(conditions))
+    except comtypes.COMError:
+        return []
+    return [array.GetElement(i) for i in range(array.Length)] if array else []
 
 
 def find_first(root, **conditions):
-    return root.FindFirst(UIA.TreeScope_Descendants, _condition(conditions))
+    """First matching descendant or None."""
+    try:
+        found = root.FindFirst(UIA.TreeScope_Descendants, _condition(conditions))
+    except comtypes.COMError:
+        return None
+    return found if found else None
 
 
 def _condition(conditions):
@@ -159,6 +166,67 @@ def _condition(conditions):
     for extra in parts[1:]:
         cond = automation().CreateAndCondition(cond, extra)
     return cond
+
+
+def invoke(element) -> bool:
+    """Press a button-like element through the UIA Invoke pattern (no mouse involved)."""
+    try:
+        element.GetCurrentPatternAs(UIA.UIA_InvokePatternId, UIA.IUIAutomationInvokePattern).Invoke()
+        return True
+    except (comtypes.COMError, ValueError, AttributeError):
+        return False
+
+
+def set_focus(element) -> bool:
+    try:
+        element.SetFocus()
+        return True
+    except comtypes.COMError:
+        return False
+
+
+def scroll_into_view(element) -> bool:
+    try:
+        element.GetCurrentPatternAs(UIA.UIA_ScrollItemPatternId, UIA.IUIAutomationScrollItemPattern).ScrollIntoView()
+        return True
+    except (comtypes.COMError, ValueError, AttributeError):
+        return False
+
+
+def is_offscreen(element) -> bool:
+    try:
+        return bool(element.CurrentIsOffscreen)
+    except comtypes.COMError:
+        return True
+
+
+def live_children(element) -> list:
+    try:
+        array = element.FindAll(UIA.TreeScope_Children, automation().RawViewCondition)
+    except comtypes.COMError:
+        return []
+    return [array.GetElement(i) for i in range(array.Length)] if array else []
+
+
+def has_focus(element) -> bool:
+    try:
+        return bool(element.CurrentHasKeyboardFocus)
+    except comtypes.COMError:
+        return False
+
+
+def focused_element():
+    try:
+        return automation().GetFocusedElement()
+    except comtypes.COMError:
+        return None
+
+
+def same(a, b) -> bool:
+    try:
+        return bool(automation().CompareElements(a, b))
+    except comtypes.COMError:
+        return False
 
 
 # --- tree dump (same JSON shape as the macOS accessibility dump) -----------------------------------------

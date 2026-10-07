@@ -22,7 +22,7 @@ from proactive import (PREVIEW_COUNT, SHAPES, call_out_people, callback_material
 
 def shared_reply_instructions(base):
     """The style and honesty rules every reply (and every opening line) follows."""
-    shared = prompt_path(base, "reply-rules.txt").read_text().strip()
+    shared = prompt_path(base, "reply-rules.txt").read_text(encoding="utf-8").strip()
     if not shared:
         raise RuntimeError("共享回复规则为空")
     return shared
@@ -122,7 +122,7 @@ class Model:
     def _instructions(self, task):
         """System prompt for a task; chat replies and opening lines also get the shared rules, the persona and what
         the owner's ratings taught."""
-        text = prompt_path(self.base, f"{task}-instructions.txt").read_text()
+        text = prompt_path(self.base, f"{task}-instructions.txt").read_text(encoding="utf-8")
         if task == "reply":
             extras = [shared_reply_instructions(self.base), persona_instructions(self.config.get("persona")), preferences_section(self.base)]
         elif task == "proactive-candidates":
@@ -139,7 +139,7 @@ class Model:
         for path in image_paths:                 # keep uploads small: only shrinks, never enlarges
             shrink_image(path, c.get("image_max_edge", 2048))
         try:
-            conversation = json.loads((self.base / "runtime/conversations.json").read_text()).get(group, {})
+            conversation = json.loads((self.base / "runtime/conversations.json").read_text(encoding="utf-8")).get(group, {})
         except (OSError, json.JSONDecodeError):
             conversation = {}
         context = {

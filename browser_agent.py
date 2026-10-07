@@ -58,7 +58,7 @@ class BrowserAgent:
             python = c.get("python") or sys.executable
             profile = self.base / "runtime/browser-profile"
             self.responses = queue.Queue()
-            with (self.base / "runtime/browser-worker.log").open("a") as errors:
+            with (self.base / "runtime/browser-worker.log").open("a", encoding="utf-8") as errors:
                 self.process = subprocess.Popen([python, "-u", str(self.base / "browser_worker.py"), str(profile)],
                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors, text=True)
             process, responses = self.process, self.responses
@@ -168,7 +168,7 @@ class BrowserAgent:
                 if observation.get("url"):
                     allowed_urls.add(observation["url"])
             history.append({"action": action.get("action"), "url": action.get("url"), "error": observation.get("error")})
-            with (self.base / "runtime/browser.log").open("a") as log:
+            with (self.base / "runtime/browser.log").open("a", encoding="utf-8") as log:
                 log.write(json.dumps({"at": time.strftime("%Y-%m-%d %H:%M:%S"), "step": step + 1,
                        **history[-1], "media": observation.get("media"), "subtitles_status": observation.get("video", {}).get("subtitles_status"),
                        "worth_watching": action.get("worth_watching"), "needs_visual": action.get("needs_visual"),

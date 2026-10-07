@@ -15,7 +15,7 @@ class DailyStats:
         self.path = Path(path)
         self.lock = threading.Lock()
         try:
-            self.days = json.loads(self.path.read_text())
+            self.days = json.loads(self.path.read_text(encoding="utf-8"))
             if not isinstance(self.days, dict):
                 self.days = {}
         except (OSError, json.JSONDecodeError):
@@ -31,7 +31,7 @@ class DailyStats:
             data = json.dumps(self.days, ensure_ascii=False, indent=1, sort_keys=True)
         tmp = self.path.with_suffix(".tmp")
         try:
-            tmp.write_text(data)
+            tmp.write_text(data, encoding="utf-8")
             os.chmod(tmp, 0o600)
             fsutil.replace(tmp, self.path)
         except OSError:
