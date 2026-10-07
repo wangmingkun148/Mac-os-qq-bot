@@ -1,4 +1,8 @@
-# Mac os qq聊天bot
+# qq-chatbot（macOS 版）
+
+> **要求 QQ 窗口始终在前台。** 本程序通过读取并操作 QQ 桌面客户端的界面来收发消息：运行期间 QQ 不能最小化或隐藏，也不要被其他窗口长期盖住；它发送回复、复制图片时会把 QQ 切到前台，并占用键盘和鼠标。
+
+本仓库有 macOS 和 Windows 两个版本。本页说明 macOS 版；**Windows 版**见 [`windows-port`](https://github.com/wangmingkun148/qq-chatbot/tree/windows-port) 分支的 README，现成程序是 [Releases](https://github.com/wangmingkun148/qq-chatbot/releases) 里的 `qq-chatbot-Windows-x64.zip`。
 
 本项目使用 ChatGPT、Claude AI 等生成式 AI 辅助制作。
 
@@ -33,8 +37,9 @@
 
 到仓库的 **Releases** 下载：
 
-- `Mac-os-qq-bot-macOS-arm64.zip`：现成应用和必需的 Python 源码、提示词及公开配置模板。
-- `Mac-os-qq-bot-source.zip`：源码包，适合自行编译或修改。
+- `qq-chatbot-macOS-arm64.zip`：现成应用和必需的 Python 源码、提示词及公开配置模板。
+- `qq-chatbot-source.zip`：源码包，适合自行编译或修改。
+- `qq-chatbot-Windows-x64.zip`：Windows 版现成程序，不适用于 macOS（说明见 `windows-port` 分支的 README）。
 
 解压后请保留整个文件夹。`QQChatBridge.app` 需要同目录的 Python 文件、`prompts/` 和 `config.example.json`；不能只把 `.app` 单独拖到其他目录。建议把整个文件夹放在你能读写的固定位置，再启动应用。若 macOS 将下载的 App 放到临时隔离路径中运行，程序会提示选择真正的解压目录，请选择含 `bridge.py`、`config.example.json` 和 `prompts/` 的整个文件夹。
 
@@ -51,14 +56,14 @@
 如果下载后仍因隔离属性无法正常定位或启动，可以仅对已确认来自本仓库的解压文件夹执行：
 
 ```sh
-xattr -dr com.apple.quarantine "/完整路径/Mac-os-qq-bot"
+xattr -dr com.apple.quarantine "/完整路径/解压后的文件夹"
 ```
 
 将路径换成自己的解压目录，然后重新打开应用；不要对整个下载目录或磁盘执行。
 
 ## 首次使用
 
-1. 打开 QQ，登录准备使用的账号，保持 QQ 主窗口打开。
+1. 打开 QQ，登录准备使用的账号，让 QQ 主窗口保持打开并始终在前台（不要最小化或隐藏，也不要被其他窗口长期盖住）。
 2. 启动 `QQChatBridge.app`。首次会从 `config.example.json` 创建仅本机使用的 `config.json`，自动显示设置。
 3. 在“常规”填写 **本账号在 QQ 中显示的昵称**、**主群完整名称**。不是群友的昵称。主群名称须与 QQ 会话列表一致。需要 QQ 空间时另填本账号 QQ 号。
 4. 在“AI 供应商”填写供应商名称、接口地址、API Key、模型名称与可选回复后缀。思考强度可留空，按供应商能力选择；请求超时和超时重试可调整。
@@ -151,7 +156,7 @@ QQ 可能对使用自动化的账号进行限制或封禁，建议使用小号�
 - **消息停在输入框**：程序会暂停避免重复发送，先人工检查输入框，再恢复监听。
 - **运行受键盘输入打断**：程序会等待你停止打字，以减少将按键送错到 QQ 的机会。
 - **QQ 更新后失效**：本项目依赖 QQ 的辅助功能界面结构，界面更新可能需要适配。
-- **为什么不是后台无窗口机器人**：消息读取与发送依赖已登录的 QQ 桌面客户端，因此需要真实窗口与系统权限。
+- **为什么不是后台无窗口机器人**：消息读取与发送依赖已登录的 QQ 桌面客户端，因此需要真实窗口与系统权限，QQ 必须始终留在前台。
 
 **本项目仅在作者的个人电脑上测试过，尚未在其他电脑上充分验证，可能存在稳定性问题，也可能无法在你的电脑上运行。** 已完成的源码和构建检查不能保证其他系统、硬件、QQ 版本、AI 服务及网站环境兼容；建议使用 macOS 26 或更新版本。
 
