@@ -689,8 +689,9 @@ function diagnosticsPane() {
       check('能读取 QQ 界面', d.qqReadable, d.qqReadable ? 'UI Automation 读取正常' : (d.readError || '读取失败')),
       check('权限一致', !(d.qqElevated === true && d.appElevated === false) && d.qqElevated !== null, d.qqElevated === true && d.appElevated === false ? 'QQ 以管理员身份运行而本程序不是：无法点击/输入，请以管理员身份重新运行本程序'
         : d.qqElevated === null ? '无法判断 QQ 是否以管理员身份运行（可能被更高权限保护）' : '正常'),
-      check('QQ 被盖住时仍能刷新', d.qqFlags !== false, d.qqFlags === null || d.qqFlags === undefined ? '（QQ 没有运行，无法检查）' : d.qqFlags ? '已用防休眠参数启动'
-        : 'QQ 被别的窗口完全盖住后界面会停止更新，机器人读到的是旧消息。请用下面的按钮重启 QQ，或始终让 QQ 窗口露出一部分。'),
+      frow('被其他窗口盖住时的刷新', d.qqFlags === null || d.qqFlags === undefined ? 'QQ 没有运行，无法检查' : d.qqFlags ? '已用防休眠参数启动，被盖住时也会实时刷新'
+        : '没有用防休眠参数启动（可选）。测试中 QQ 被盖住时仍能读取；如果你发现被其他窗口完全盖住后机器人读到旧消息，用下面的按钮重启 QQ 即可。',
+      h('span', { class: d.qqFlags ? 'good' : 'faint' }, icon(d.qqFlags ? 'check' : 'dots', 1.5))),
       check('回复后台', d.backendAlive, d.backendAlive ? '运行中' : '没有在运行'),
       check('系统通知', d.notifications, d.notifications ? '通过托盘图标发出' : '托盘不可用'),
     ] : frow('检测中…')),
