@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "post_id": {"type": "string"},
+    "like": {"type": "boolean"},
+    "comment": {"type": "string"},
+    "reason": {"type": "string"}
+  },
+  "required": ["post_id", "like", "comment", "reason"],
+  "additionalProperties": false
+}

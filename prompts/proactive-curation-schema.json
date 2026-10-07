@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "source_url": {"type": "string"},
+    "discussion_angle": {"type": "string"},
+    "reason": {"type": "string"}
+  },
+  "required": ["source_url", "discussion_angle", "reason"],
+  "additionalProperties": false
+}

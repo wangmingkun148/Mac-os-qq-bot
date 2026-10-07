@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "allowed": {"type": "boolean"},
+    "reply": {"type": "string"},
+    "reason": {"type": "string"}
+  },
+  "required": ["allowed", "reply", "reason"],
+  "additionalProperties": false
+}

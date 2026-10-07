@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "domains": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 5},
+    "search_queries": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 2}
+  },
+  "required": ["domains", "search_queries"],
+  "additionalProperties": false
+}

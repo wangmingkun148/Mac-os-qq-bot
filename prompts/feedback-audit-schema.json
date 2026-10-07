@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "properties": {
+    "remove": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {"line": {"type": "integer"}, "why": {"type": "string"}},
+        "required": ["line", "why"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["remove"],
+  "additionalProperties": false
+}

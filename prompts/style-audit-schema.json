@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "missing": {"type": "array", "items": {"type": "string"}},
+    "changed": {"type": "array", "items": {"type": "string"}},
+    "added": {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["missing", "changed", "added"],
+  "additionalProperties": false
+}

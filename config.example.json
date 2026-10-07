@@ -1,0 +1,67 @@
+{
+  "groups": [
+    "填写主群完整名称"
+  ],
+  "self_names": [
+    "填写本账号昵称"
+  ],
+  "qq_account": "",
+  "python": "",
+  "qq_app": "/Applications/QQ.app",
+  "persona": "",
+  "poll_seconds": 2,
+  "merge_seconds": 6,
+  "max_merge_seconds": 20,
+  "cooldown_seconds": 12,
+  "context_messages": 12,
+  "max_reply_chars": 160,
+  "reply_all_conversations": false,
+  "reply_style_group": "",
+  "style_summary_every": 100,
+  "style_profile_max_chars": 1900,
+  "style_summary_max_chars": 1900,
+  "message_archive_file": "runtime/messages.jsonl",
+  "proactive_enabled": false,
+  "proactive_idle_seconds": 1800,
+  "proactive_probability": 0.5,
+  "ai": {
+    "name": "",
+    "base_url": "",
+    "api_key": "",
+    "model": "",
+    "suffix": "",
+    "suffix_enabled": true,
+    "reasoning_effort": "",
+    "timeout_seconds": 60,
+    "timeout_retries": 1
+  },
+  "browser": {
+    "enabled": false
+  },
+  "image_generation": {
+    "enabled": false,
+    "endpoint": "",
+    "api_key": "",
+    "model": "",
+    "size": "1920*1080",
+    "max_per_24h": 2,
+    "timeout_seconds": 240,
+    "unlimited_senders": [],
+    "usage_file": "runtime/image-generation-usage.json"
+  },
+  "qzone": {
+    "schedule_enabled": false,
+    "hour": 19,
+    "interval_seconds": 60
+  },
+  "proactive_search": {
+    "news_rss": true,
+    "youtube": false
+  },
+  "pet": {
+    "enabled": false,
+    "scale": 4,
+    "wander": true,
+    "bubble": true
+  }
+}

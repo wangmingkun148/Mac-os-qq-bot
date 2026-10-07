@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "properties": {
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "shape": {"type": "string"},
+          "reply": {"type": "string"},
+          "reason": {"type": "string"},
+          "source_url": {"type": "string"}
+        },
+        "required": ["shape", "reply", "reason", "source_url"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["candidates"],
+  "additionalProperties": false
+}

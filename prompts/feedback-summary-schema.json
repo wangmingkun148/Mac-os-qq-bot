@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "preferences": {"type": "string"},
+    "changes": {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["preferences", "changes"],
+  "additionalProperties": false
+}

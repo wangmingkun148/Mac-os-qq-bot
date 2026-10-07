@@ -1,0 +1,17 @@
+# Local credentials and conversations
+config.json
+config.json.*
+!config.example.json
+runtime/
+backups/
+*.bak
+.env
+.env.*
+
+# Build outputs and dependencies
+QQChatBridge.app/
+dist/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
