@@ -20,8 +20,11 @@ from ctypes import wintypes
 import comtypes
 import comtypes.client
 
-comtypes.client.GetModule("UIAutomationCore.dll")
-from comtypes.gen import UIAutomationClient as UIA  # noqa: E402  (generated on first import)
+try:                                    # normal case, and the only one that works in a frozen app: wrapper already generated
+    from comtypes.gen import UIAutomationClient as UIA
+except ImportError:                     # first run from source: generate the wrapper from the type library
+    comtypes.client.GetModule("UIAutomationCore.dll")
+    from comtypes.gen import UIAutomationClient as UIA  # noqa: E402
 
 # UIA property ids (UIAutomationClient.h)
 P_BOUNDS = 30001
@@ -168,12 +171,24 @@ def _condition(conditions):
     return cond
 
 
+def get_pattern(element, pattern_id, interface):
+    """The UIA control pattern of ``element`` as ``interface``, or None when it does not support it."""
+    try:
+        unknown = element.GetCurrentPattern(pattern_id)
+        return unknown.QueryInterface(interface) if unknown else None
+    except (comtypes.COMError, ValueError, AttributeError):
+        return None
+
+
 def invoke(element) -> bool:
     """Press a button-like element through the UIA Invoke pattern (no mouse involved)."""
+    pattern = get_pattern(element, UIA.UIA_InvokePatternId, UIA.IUIAutomationInvokePattern)
+    if pattern is None:
+        return False
     try:
-        element.GetCurrentPatternAs(UIA.UIA_InvokePatternId, UIA.IUIAutomationInvokePattern).Invoke()
+        pattern.Invoke()
         return True
-    except (comtypes.COMError, ValueError, AttributeError):
+    except comtypes.COMError:
         return False
 
 
@@ -186,10 +201,13 @@ def set_focus(element) -> bool:
 
 
 def scroll_into_view(element) -> bool:
+    pattern = get_pattern(element, UIA.UIA_ScrollItemPatternId, UIA.IUIAutomationScrollItemPattern)
+    if pattern is None:
+        return False
     try:
-        element.GetCurrentPatternAs(UIA.UIA_ScrollItemPatternId, UIA.IUIAutomationScrollItemPattern).ScrollIntoView()
+        pattern.ScrollIntoView()
         return True
-    except (comtypes.COMError, ValueError, AttributeError):
+    except comtypes.COMError:
         return False
 
 
@@ -250,8 +268,10 @@ EDITOR_CLASS = "ExEditor-qq-msg-editor"      # the ProseMirror message box at th
 
 def pattern_text(element) -> str:
     """Full text of an element through the UIA Text pattern ('' when unavailable)."""
+    pattern = get_pattern(element, UIA.UIA_TextPatternId, UIA.IUIAutomationTextPattern)
+    if pattern is None:
+        return ""
     try:
-        pattern = element.GetCurrentPatternAs(UIA.UIA_TextPatternId, UIA.IUIAutomationTextPattern)
         return pattern.DocumentRange.GetText(-1) or ""
     except (comtypes.COMError, ValueError, AttributeError):
         return ""

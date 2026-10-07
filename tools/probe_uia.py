@@ -7,6 +7,7 @@ developing. Pass ``--raw`` to keep the real text, e.g. when testing against a pr
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -75,10 +76,11 @@ def main():
     comtypes.CoInitialize()
     target = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("uia-outline.txt")
     raw = "--raw" in sys.argv
-    windows = [w for w in uia.top_level_windows() if w["visible"]]
+    process = os.environ.get("QQBOT_TEST_PROCESS", "QQ.exe")     # set to msedge.exe to probe the mock QQ page
+    windows = [w for w in uia.top_level_windows(process) if w["visible"]]
     for w in windows:
         print(w["hwnd"], w["pid"], repr(w["title"]) if raw else f"<{len(w['title'])}c>", w["cls"], w["rect"], "min" if w["minimized"] else "")
-    main_windows = [w for w in windows if w["title"] == "QQ"]
+    main_windows = [w for w in windows if w["title"] == "QQ" or (process != "QQ.exe" and w["title"].startswith("QQ - "))]
     if not main_windows:
         print("no QQ main window found")
         return

@@ -41,14 +41,34 @@ def main(argv=None):
     app = App(args.base, dry_run=args.dry_run)
     problem = app.prepare_project()
     if problem:
-        print(problem, file=sys.stderr)
+        report_problem(problem)
         return 1
+    if getattr(sys, "frozen", False):
+        redirect_output(args.base)
 
     if args.console:
         return run_console(app, args)
 
     from .shell import run_shell
     return run_shell(app, args)
+
+
+def report_problem(text: str):
+    """Tell the user why the app cannot start: a message box in the windowed build, stderr otherwise."""
+    if getattr(sys, "frozen", False) or sys.stderr is None:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, text, "QQ 自动回复", 0x10)
+    else:
+        print(text, file=sys.stderr)
+
+
+def redirect_output(base: Path):
+    """A windowed app has no console: keep whatever the program prints in runtime/app.log."""
+    try:
+        log = open(Path(base) / "runtime" / "app.log", "a", encoding="utf-8", buffering=1)
+        sys.stdout = sys.stderr = log
+    except OSError:
+        sys.stdout = sys.stderr = open(os.devnull, "w")
 
 
 def run_console(app, args) -> int:

@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>QQ</title>
+<style>
+  body { margin: 0; font: 14px "Microsoft YaHei UI", sans-serif; background: #fff; color: #222; overflow: hidden; }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  .topbar-content { height: 40px; background: #eef; display: flex; align-items: center; padding: 0 12px; gap: 10px; }
+  .user-avatar { width: 24px; height: 24px; border-radius: 12px; background: #39f; border: 0; }
+  .message-panel { flex: 1; display: flex; min-height: 0; }
+  .two-col-layout__aside { width: 250px; border-right: 1px solid #ddd; overflow: auto; }
+  .recent-contact-item { height: 56px; padding: 8px 12px; box-sizing: border-box; border-bottom: 1px solid #eee; cursor: pointer; }
+  .recent-contact-item--selected { background: #dbeafe; }
+  .aio { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .chat-header { height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid #ddd; }
+  .chat-header__contact-name { border: 0; background: none; font-size: 16px; }
+  .group-chat { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .chat-msg-area { flex: 1; min-height: 0; overflow: hidden; }
+  .ml-area { height: 100%; overflow-y: auto; }
+  .ml-item { padding: 4px 16px; }
+  .message-container { display: grid; grid-template-columns: 32px 1fr; column-gap: 8px; align-items: start; }
+  .message-container--self { grid-template-columns: 1fr 32px; }
+  .message-container .avatar-span { grid-column: 1; grid-row: 1 / span 2; }
+  .message-container .user-name { grid-column: 2; grid-row: 1; }
+  .message-container .message-content__wrapper { grid-column: 2; grid-row: 2; }
+  .message-container--self .avatar-span { grid-column: 2; }
+  .message-container--self .user-name, .message-container--self .message-content__wrapper { grid-column: 1; text-align: right; }
+  .avatar-span { width: 32px; height: 32px; flex: none; }
+  .avatar-native { width: 32px; height: 32px; border-radius: 16px; background: #9bd; }
+  .user-name { font-size: 12px; color: #777; }
+  .message-content { background: #f2f2f2; border-radius: 6px; padding: 6px 10px; display: inline-block; }
+  .container--self .message-content { background: #cde8ff; }
+  .pic-element { max-width: 220px; max-height: 160px; display: block; }
+  .chat-input-area { border-top: 1px solid #ddd; height: 190px; display: flex; flex-direction: column; }
+  .chat-func-bar { height: 36px; }
+  .msg-input { flex: 1; padding: 6px 16px; overflow: auto; }
+  .ProseMirror { min-height: 70px; outline: none; white-space: pre-wrap; }
+  .ProseMirror img { max-height: 80px; display: inline-block; }
+  .operation { height: 44px; display: flex; justify-content: flex-end; padding: 0 16px; }
+  .send-msg { padding: 4px 16px; }
+  .send--disabled .send-msg { opacity: .4; }
+  .ctx { position: fixed; background: #fff; border: 1px solid #aaa; box-shadow: 2px 2px 6px #0003; z-index: 9; }
+  .ctx-item { padding: 6px 24px; cursor: pointer; } .ctx-item:hover { background: #def; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar-content"><button class="avatar user-avatar" aria-label="小我的头像"></button><span>QQ</span></div>
+  <div class="message-panel">
+    <div class="two-col-layout__aside"><div class="recent-contact"><div class="q-scroll-view recent-contact-list" role="application" aria-label="会话列表" id="list"></div></div></div>
+    <div class="aio">
+      <div class="chat-header"><div class="panel-header__title"><button class="chat-header__contact-name" id="title"></button></div>
+        <div class="panel-header__action" id="actions"></div></div>
+      <div class="group-chat">
+        <div class="chat-msg-area"><div class="ml-area" role="application" aria-label="消息列表"><div class="ml-list" id="messages"></div></div></div>
+        <div class="chat-input-area">
+          <div class="chat-func-bar" aria-label="工具栏"></div>
+          <div class="msg-input"><div class="qq-msg-editor__root"><div class="ProseMirror ExEditor-qq-msg-editor is-empty" id="editor" contenteditable="true"></div></div></div>
+          <div class="operation"><div class="send send--disabled" id="sendbox"><button class="send-msg" id="send" aria-label="发送">发送</button></div></div>
+        </div>
+      </div>
+      <div role="application" aria-label="群成员列表" id="members"></div>
+    </div>
+  </div>
+</div>
+<div id="menu"></div>
+<script>
+'use strict';
+const PNG_RED = (() => { const c = document.createElement('canvas'); c.width = 120; c.height = 80; const x = c.getContext('2d'); x.fillStyle = '#c33'; x.fillRect(0, 0, 120, 80); x.fillStyle = '#fff'; x.fillRect(40, 20, 40, 40); return c.toDataURL('image/png'); })();
+let serial = 7700000000000000000n;
+const nextId = () => String(serial++);
+const chats = {
+  '测试群': { kind: 'group', members: 3, preview: '大家好', messages: [] },
+  '朋友': { kind: 'private', members: 0, preview: '在吗', messages: [] },
+};
+let active = '测试群';
+const push = (chat, m) => { chats[chat].messages.push({ id: nextId(), ...m }); chats[chat].preview = m.text || '[图片]'; };
+push('测试群', { sender: '小明', text: '大家好' });
+push('测试群', { sender: '小我', text: '你好', self: true });
+push('朋友', { sender: '朋友', text: '在吗' });
+
+const $ = (id) => document.getElementById(id);
+// Chromium drops plain <div>s from the accessibility tree; QQ's divs survive (click handlers, tabindex...), so give ours a role
+function el(tag, cls, text, attrs) {
+  const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text;
+  for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v);
+  if (tag === 'div' && !e.hasAttribute('role')) e.setAttribute('role', 'group');
+  return e;
+}
+
+function render() {
+  const list = $('list'); list.replaceChildren();
+  for (const [name, chat] of Object.entries(chats)) {
+    const row = el('div', 'recent-contact-item' + (name === active ? ' recent-contact-item--selected' : ''));
+    const info = el('div', 'item__info'); info.append(el('span', null, name)); if (chat.kind === 'group') info.append(el('span', null, `(${chat.members})`));
+    const summary = el('div', 'summary-main'); summary.append(el('span', null, chat.preview));
+    info.append(summary);
+    const content = el('div', 'item__content'); content.append(info); row.append(content);
+    row.addEventListener('click', () => { active = name; render(); });
+    list.append(row);
+  }
+  const t = $('title'); t.replaceChildren(el('span', null, active)); t.setAttribute('aria-label', active);
+  if (chats[active].kind === 'group') t.append(el('span', null, `(${chats[active].members})`));
+  const actions = $('actions'); actions.replaceChildren();
+  if (chats[active].kind === 'group') actions.append(el('button', 'bar-icon', '群应用', { 'aria-label': '群应用' })); else actions.append(el('button', 'bar-icon', '发起群聊', { 'aria-label': '发起群聊' }));
+  const members = $('members'); members.style.display = chats[active].kind === 'group' ? 'block' : 'none';
+  const box = $('messages'); box.replaceChildren();
+  for (const m of chats[active].messages) {
+    const item = el('div', 'ml-item', null, { id: m.id });
+    const container = el('div', 'message-container' + (m.self ? ' message-container--self' : ''));
+    const avatar = el('div', 'avatar-span', null, { 'aria-label': m.sender }); avatar.append(el('div', 'avatar-native'));
+    const name = el('div', 'user-name'); name.append(el('span', null, m.sender));
+    const wrapper = el('div', 'message-content__wrapper');
+    const bubble = el('div', 'msg-content-container ' + (m.self ? 'container--self' : 'container--others'));
+    const content = el('div', 'message-content');
+    if (m.text) content.append(el('span', null, m.text));
+    if (m.image) { const img = el('img', 'pic-element', null, { alt: '图片', src: m.image }); img.addEventListener('contextmenu', (e) => showMenu(e, m.image)); content.append(img); }
+    bubble.append(content); wrapper.append(bubble);
+    container.append(avatar, name, wrapper); container.append(el('div', null, null, { id: 'md-tips__' + m.id }));
+    const message = el('div', 'message'); message.append(container); item.append(message); box.append(item);
+  }
+  box.parentElement.scrollTop = box.parentElement.scrollHeight;
+}
+
+function showMenu(event, image) {
+  event.preventDefault();
+  const menu = $('menu'); menu.replaceChildren();
+  const ctx = el('div', 'ctx', null, { role: 'menu' }); ctx.style.left = event.clientX + 'px'; ctx.style.top = event.clientY + 'px';
+  const item = el('div', 'ctx-item', '复制', { role: 'menuitem', 'aria-label': '复制' });
+  item.addEventListener('click', async (e) => {
+    fetch('/api/log', { method: 'POST', body: `copy clicked trusted=${e.isTrusted} focus=${document.hasFocus()}` });
+    const blob = await (await fetch(image)).blob();
+    try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); } catch (e) { fetch('/api/log', { method: 'POST', body: 'clipboard write failed: ' + e }); }
+    menu.replaceChildren();
+  });
+  ctx.append(item); menu.append(ctx);
+}
+document.addEventListener('click', (e) => { if (!e.target.closest('.ctx')) $('menu').replaceChildren(); });
+
+const editor = $('editor');
+function syncEditor() {
+  const empty = !editor.textContent.trim() && !editor.querySelector('img');
+  editor.classList.toggle('is-empty', empty); $('sendbox').classList.toggle('send--disabled', empty);
+}
+editor.addEventListener('input', syncEditor);
+editor.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) { e.preventDefault(); send(); } });
+editor.addEventListener('paste', (e) => {
+  const file = [...e.clipboardData.items].find((i) => i.type.startsWith('image/'));
+  if (!file) return;
+  e.preventDefault();
+  const reader = new FileReader();
+  reader.onload = () => { const img = document.createElement('img'); img.src = reader.result; editor.append(img); syncEditor(); };
+  reader.readAsDataURL(file.getAsFile());
+});
+$('send').addEventListener('click', send);
+async function send() {
+  if (editor.classList.contains('is-empty')) return;
+  const image = editor.querySelector('img'); const text = [...editor.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim();
+  push(active, { sender: '小我', text, image: image ? image.src : null, self: true });
+  fetch('/api/sent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat: active, text, image: !!image }) });
+  editor.replaceChildren(); syncEditor(); render();
+}
+setInterval(async () => {
+  try {
+    for (const ev of await (await fetch('/api/inbox')).json()) {
+      if (!chats[ev.chat]) chats[ev.chat] = { kind: 'group', members: 2, preview: '', messages: [] };
+      push(ev.chat, { sender: ev.sender, text: ev.text || '', image: ev.image ? PNG_RED : null });
+      render();
+    }
+  } catch (e) { /* server gone */ }
+}, 250);
+document.querySelectorAll('div:not([role])').forEach((d) => d.setAttribute('role', 'group'));
+render(); editor.focus();
+</script>
+</body>
+</html>

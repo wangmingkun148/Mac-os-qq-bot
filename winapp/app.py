@@ -7,6 +7,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import sys
 import threading
 import time
 import traceback
@@ -21,7 +22,8 @@ from .native import WinNative
 
 PLACEHOLDER_GROUP = "填写主群完整名称"
 PLACEHOLDER_NAME = "填写本账号昵称"
-REQUIRED_FILES = ("bridge.py", "config.example.json", "prompts/reply-instructions.txt")
+REQUIRED_FILES = (("config.example.json", "prompts/reply-instructions.txt") if getattr(sys, "frozen", False)
+                  else ("bridge.py", "config.example.json", "prompts/reply-instructions.txt"))
 
 
 def ai_configured(ai) -> bool:

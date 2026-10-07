@@ -33,6 +33,8 @@ class QQ:
         self.shell = shell              # provides: config, paused, pending_send, typing_seconds(), nativelog(), base
         self._hwnd = 0
         self._pid = 0
+        # development only: drive the mock QQ page (tools/fake_qq) running in Edge instead of the real client
+        self.process = os.environ.get("QQBOT_TEST_PROCESS", "QQ.exe")
 
     # ------------------------------------------------------------------ plumbing
     @property
@@ -55,16 +57,19 @@ class QQ:
         return self.shell.typing_seconds() < float(quiet if isinstance(quiet, (int, float)) else 3)
 
     # ------------------------------------------------------------------ windows / processes
+    def title_ok(self, title: str) -> bool:
+        return title == "QQ" or (self.process != "QQ.exe" and title.startswith("QQ - "))
+
     def main_windows(self, visible_only=True):
-        windows = [w for w in uia.top_level_windows("QQ.exe")
-                   if w["title"] == "QQ" and w["cls"] == "Chrome_WidgetWin_1"]
+        windows = [w for w in uia.top_level_windows(self.process)
+                   if self.title_ok(w["title"]) and w["cls"] == "Chrome_WidgetWin_1"]
         if visible_only:
             windows = [w for w in windows if w["visible"]]
         return windows
 
     def find_window(self, allow_minimized=False):
         """(hwnd, pid) of the QQ main window, or None. Hidden windows never count; minimised ones only on request."""
-        if self._hwnd and win32.is_window(self._hwnd) and uia.window_title(self._hwnd) == "QQ" \
+        if self._hwnd and win32.is_window(self._hwnd) and self.title_ok(uia.window_title(self._hwnd)) \
                 and win32.user32.IsWindowVisible(self._hwnd) and (allow_minimized or not win32.user32.IsIconic(self._hwnd)):
             return self._hwnd, self._pid
         candidates = [w for w in self.main_windows() if allow_minimized or not w["minimized"]]
@@ -76,13 +81,13 @@ class QQ:
         return self._hwnd, self._pid
 
     def qq_running(self) -> bool:
-        return bool(uia.top_level_windows("QQ.exe"))
+        return bool(uia.top_level_windows(self.process))
 
     def qq_executable(self, configured: str = "") -> str:
         """Path of QQ.exe: the configured one, the running process, or the usual install locations."""
         if configured and Path(configured).is_file():
             return configured
-        for window in uia.top_level_windows("QQ.exe"):
+        for window in uia.top_level_windows(self.process):
             return window["image"]
         for variable in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
             base = os.environ.get(variable)
@@ -297,11 +302,10 @@ class QQ:
         editor = self.editor_element(root)
         if editor is None or self.draft_present(editor):
             return {"error": "user_active_or_draft_present"}
-        if uia.is_offscreen(picture):
-            uia.scroll_into_view(row)
-            time.sleep(0.25)
+        if not self.bring_into_view(root, row, picture):
+            return {"error": "image_not_visible"}
         rect = self.row_rect(picture)
-        if not rect or rect[2] - rect[0] <= 10 or rect[3] - rect[1] <= 10 or uia.is_offscreen(picture):
+        if not rect or rect[2] - rect[0] <= 10 or rect[3] - rect[1] <= 10:
             return {"error": "image_not_visible"}
         previous = clipboard.save()
         initial = clipboard.sequence_number()
@@ -320,8 +324,12 @@ class QQ:
             if not rect:
                 return {"error": "image_not_visible"}
             win32.click((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2, right=True)
-            time.sleep(0.25)
-            item = self.find_menu_item(root, "复制")
+            item = None
+            for _ in range(12):                    # the menu reaches the accessibility tree a moment after it appears
+                time.sleep(0.15)
+                item = self.find_menu_item(root, "复制")
+                if item is not None:
+                    break
             if item is None:
                 win32.press_key(win32.VK_ESCAPE)
                 self.log("image copy: no 复制 menu item found after right-click")
@@ -343,6 +351,8 @@ class QQ:
                 if image is not None:
                     break
             if changed == initial:
+                self.log(f"image copy: clipboard never changed (sequence {initial}); open by: {clipboard.busy_owner() or 'nobody'}; "
+                         f"formats now: {clipboard.formats()}")
                 return {"error": "image_copy_timeout"}
             if image is None:
                 return {"error": "image_clipboard_unreadable", "types": ",".join(clipboard.formats())[:250]}
@@ -351,6 +361,27 @@ class QQ:
             if clipboard.sequence_number() != initial:
                 clipboard.restore(previous)
             self.shell.pending_send = False
+
+    def bring_into_view(self, root, row, picture) -> bool:
+        """Make the centre of ``picture`` visible inside the message list (UIA reports a half-hidden element as
+        on screen, and a click on the hidden half would hit the input box or toolbar)."""
+        view = self.row_rect(uia.find_first(root, name="消息列表") or picture)
+        for attempt in range(8):
+            rect = self.row_rect(picture)
+            if rect and view:
+                cx, cy = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
+                if view[0] < cx < view[2] and view[1] + 8 < cy < view[3] - 8 and not uia.is_offscreen(picture):
+                    return True
+                if attempt == 0:
+                    uia.scroll_into_view(row)
+                    time.sleep(0.25)
+                    continue
+                below = cy >= view[3] - 8
+                win32.scroll_wheel((view[0] + view[2]) // 2, (view[1] + view[3]) // 2, -3 if below else 3)
+                time.sleep(0.3)
+            else:
+                return False
+        return False
 
     def row_picture(self, row):
         """The photo/sticker element of a message row (never the quoted picture inside a reply)."""
@@ -364,7 +395,7 @@ class QQ:
         item = uia.find_first(root, name=label, ctype=CONTROL_MENUITEM)
         if item is not None:
             return item
-        for window in uia.top_level_windows("QQ.exe"):
+        for window in uia.top_level_windows(self.process):
             if window["visible"] and window["hwnd"] != self._hwnd:
                 try:
                     top = uia.automation().ElementFromHandle(window["hwnd"])

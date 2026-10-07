@@ -49,10 +49,10 @@ STANDARD_NAMES = {CF_TEXT: "CF_TEXT", CF_BITMAP: "CF_BITMAP", CF_DIB: "CF_DIB", 
 
 
 def _owner_window():
-    global _owner
-    if _owner is None:
-        _owner = user32.CreateWindowExW(0, "STATIC", "qqbot-clipboard", 0, 0, 0, 0, 0, HWND_MESSAGE, None, None, None)
-    return _owner
+    """No owner window on purpose. A clipboard owner has to answer WM_DESTROYCLIPBOARD when another program
+    empties the clipboard, and that message is sent synchronously: with an owner whose thread does not pump messages
+    (ours does not) every program that copies something would freeze until it times out."""
+    return None
 
 
 def png_format() -> int:
@@ -82,6 +82,24 @@ class opened:
 
     def __exit__(self, *exc):
         user32.CloseClipboard()
+
+
+def busy_owner() -> str:
+    """Who currently has the clipboard open (diagnostics): 'pid image' or '' when nobody does."""
+    hwnd = user32.GetOpenClipboardWindow()
+    if not hwnd:
+        return ""
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    handle = kernel32.OpenProcess(0x1000, False, pid.value)
+    image = ""
+    if handle:
+        size = wintypes.DWORD(520)
+        buffer = ctypes.create_unicode_buffer(size.value)
+        if kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+            image = buffer.value
+        kernel32.CloseHandle(handle)
+    return f"{pid.value} {image}"
 
 
 def format_name(fmt: int) -> str:

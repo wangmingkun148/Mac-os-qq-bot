@@ -5,10 +5,23 @@ import queue
 import re
 import subprocess
 import sys
+import shutil
 import threading
 import time
+import fsutil
 from browser_worker import read_page
 from temporal_relevance import outdated_for_current_claim, today
+
+
+def worker_python(base):
+    """The Python that runs the Playwright worker: the project's .venv, else the one running this program (a frozen
+    app has none of its own, so it falls back to the first python on PATH)."""
+    for candidate in (Path(base) / ".venv/Scripts/python.exe", Path(base) / ".venv/bin/python3"):
+        if candidate.is_file():
+            return str(candidate)
+    if getattr(sys, "frozen", False):
+        return shutil.which("python") or shutil.which("python3") or sys.executable
+    return sys.executable
 
 
 def browser_request(fresh, recent):
@@ -55,12 +68,13 @@ class BrowserAgent:
                 return {"error": str(exc)[:500]}
         if not self.process or self.process.poll() is not None:
             c = self.config.get("browser", {})
-            python = c.get("python") or sys.executable
+            python = c.get("python") or self.config.get("python") or worker_python(self.base)
             profile = self.base / "runtime/browser-profile"
             self.responses = queue.Queue()
             with (self.base / "runtime/browser-worker.log").open("a", encoding="utf-8") as errors:
-                self.process = subprocess.Popen([python, "-u", str(self.base / "browser_worker.py"), str(profile)],
-                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors, text=True)
+                self.process = subprocess.Popen([python, "-X", "utf8", "-u", str(self.base / "browser_worker.py"), str(profile)],
+                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors, text=True, encoding="utf-8",
+                      creationflags=fsutil.no_console())
             process, responses = self.process, self.responses
             def read():
                 for line in process.stdout:

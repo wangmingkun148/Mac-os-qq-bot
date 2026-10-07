@@ -17,6 +17,12 @@ def replace(source, target, attempts: int = 25, delay: float = 0.04):
             time.sleep(delay)
 
 
+def no_console() -> int:
+    """``creationflags`` for subprocess calls: on Windows a child console program would flash a console window."""
+    import subprocess
+    return getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+
+
 def read_json_text(path) -> str:
     """Text of a JSON file written by this app or by hand (UTF-8, with or without a byte-order mark)."""
     with open(path, encoding="utf-8-sig") as handle:

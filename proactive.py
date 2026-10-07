@@ -99,7 +99,8 @@ def proactive_source_candidates(queries, config):
                 try:
                     result = subprocess.run([executable, "--no-warnings", "--ignore-errors", "--dump-json",
                                              f"ytsearch4:{query}"], capture_output=True, text=True,
-                                            timeout=25, check=False)
+                                            encoding="utf-8", errors="replace", timeout=25, check=False,
+                                            creationflags=fsutil.no_console())
                     for line in result.stdout.splitlines()[:4]:
                         try:
                             video = json.loads(line)
