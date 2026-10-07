@@ -1,6 +1,6 @@
 # Build QQChatBridge.exe (PyInstaller, one folder) and a zip of it.
 #   powershell -ExecutionPolicy Bypass -File build.ps1
-# Output: dist\QQChatBridge\QQChatBridge.exe and dist\Mac-os-qq-bot-Windows-x64.zip
+# Output: dist\QQChatBridge\QQChatBridge.exe and dist\qq-chatbot-Windows-x64.zip
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
@@ -30,7 +30,7 @@ Copy-Item prompts (Join-Path $out "prompts") -Recurse -Force
 Copy-Item config.example.json, README.md, LICENSE $out -Force
 Copy-Item requirements-browser.txt $out -Force
 
-$zip = Join-Path $PSScriptRoot "dist\Mac-os-qq-bot-Windows-x64.zip"
+$zip = Join-Path $PSScriptRoot "dist\qq-chatbot-Windows-x64.zip"
 if (Test-Path $zip) { Remove-Item $zip }
 # zipfile (not Compress-Archive, which writes backslashes) with a top-level QQChatBridge folder
 $zipper = "import sys,zipfile,pathlib; src=pathlib.Path(sys.argv[1]); z=zipfile.ZipFile(sys.argv[2],'w',zipfile.ZIP_DEFLATED,compresslevel=9); [z.write(f,'QQChatBridge/'+f.relative_to(src).as_posix()) for f in sorted(src.rglob('*')) if f.is_file()]; z.close()"

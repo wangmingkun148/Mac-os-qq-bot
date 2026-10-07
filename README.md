@@ -1,8 +1,10 @@
-# QQ 聊天 Bot（Windows 版）
+# qq-chatbot（Windows 版）
 
-本项目使用 ChatGPT、Claude AI 等生成式 AI 辅助制作，由 [Mac-os-qq-bot](https://github.com/wangmingkun148/Mac-os-qq-bot) 的 macOS 版重构而来。
+本项目使用 ChatGPT、Claude AI 等生成式 AI 辅助制作，由 [qq-chatbot](https://github.com/wangmingkun148/qq-chatbot) 的 macOS 版（`main` 分支）重构而来。
 
 一个在 Windows 上运行的 QQ 聊天机器人：通过 Windows UI Automation 读取 QQ 桌面客户端（QQ NT）的界面、复制图片、输入回复并点击发送，再回读确认。托盘图标 + 本地网页界面（面板、实时状态窗、设置），Python 后台，适合自己配置 AI 接口后在本机使用。
+
+> **要求 QQ 窗口始终在前台。** 本程序是通过操作 QQ 桌面客户端的界面来收发消息的：运行期间 QQ 不能最小化或收进托盘，也不要被其他窗口长期盖住；它发送和复制图片时会把 QQ 切到前台，并占用键盘和鼠标。
 
 **所有 AI 任务使用你配置的同一个原生多模态模型。** 没有内置供应商、预设角色或已有聊天资料。聊天判断与回复、群聊风格总结、记忆压缩、网页与视频分析、主动话题、图片审核都走同一个 OpenAI 兼容接口。图片生成使用单独配置的生图接口。
 
@@ -28,7 +30,7 @@
 
 ## 安装与首次使用
 
-1. 到仓库 **Releases** 下载 `Mac-os-qq-bot-Windows-x64.zip`，解压到一个你能读写的固定文件夹（不要直接在压缩包里运行，也不要放在 `Program Files`）。保留整个文件夹，`QQChatBridge.exe` 需要旁边的 `prompts/` 和 `config.example.json`。
+1. 到仓库 **Releases** 下载 `qq-chatbot-Windows-x64.zip`，解压到一个你能读写的固定文件夹（不要直接在压缩包里运行，也不要放在 `Program Files`）。保留整个文件夹，`QQChatBridge.exe` 需要旁边的 `prompts/` 和 `config.example.json`。
 2. 双击 `QQChatBridge.exe`。程序没有代码签名，SmartScreen 可能提示“未知发布者”：确认下载来自本仓库后点“更多信息 → 仍要运行”。
 3. 首次启动会从 `config.example.json` 创建仅本机使用的 `config.json`，并自动打开设置窗口。填写：
    - **本账号昵称**：本账号在 QQ 中显示的昵称（左上角头像旁），不是群友昵称；
