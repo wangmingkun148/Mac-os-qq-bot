@@ -17,9 +17,11 @@ if (-not (Test-Path $py)) {
     --icon "winapp\ui\icon.ico" `
     --python-option "X utf8" `
     --add-data "winapp\ui;winapp\ui" `
+    --add-data "winapp\pet_art.json;winapp" `
     --collect-submodules comtypes.gen `
     --hidden-import pystray._win32 `
-    --exclude-module tkinter --exclude-module unittest `
+    --hidden-import PIL.ImageTk `
+    --exclude-module unittest `
     winapp_entry.py
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 

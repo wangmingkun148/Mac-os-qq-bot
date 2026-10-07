@@ -165,6 +165,7 @@ class Shell:
         self.web = WebUI(app, self)
         self.windows = Windows(app, self.web)
         self.icon: pystray.Icon | None = None
+        self.pet = None
         self._phase = None
         self._stop = threading.Event()
 
@@ -177,6 +178,8 @@ class Shell:
 
     def quit(self):
         self._stop.set()
+        if self.pet:
+            self.pet.stop()
         self.app.shutdown()
         self.windows.close_all()
         if self.icon:
@@ -191,6 +194,8 @@ class Shell:
             pystray.MenuItem("设置", lambda: self.windows.open("settings", "general")),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(lambda item: "暂停" if not self.app.paused else "开始", self._toggle),
+            pystray.MenuItem(lambda item: "隐藏桌宠" if (self.app.config.get("pet") or {}).get("enabled") else "显示桌宠",
+                             lambda: self.app.set_pet_enabled(not (self.app.config.get("pet") or {}).get("enabled"))),
             pystray.MenuItem("打开配置文件", lambda: self.app.open_config_file()),
             pystray.MenuItem("打开项目文件夹", lambda: os.startfile(str(self.app.base))),
             pystray.Menu.SEPARATOR,
@@ -246,6 +251,12 @@ class Shell:
         app.on_state_change = self.refresh_icon
         app.ensure_native()
         app.start_backend()
+        try:
+            from .pet import PetController
+            self.pet = PetController(app, self)
+            self.pet.start()
+        except Exception:                 # the pet is a decoration: never let it stop the bot
+            self.pet = None
         if self.args.start and not app.first_run and app.paused:
             app.toggle()
         from .app import configuration_problem

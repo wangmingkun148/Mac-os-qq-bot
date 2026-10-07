@@ -419,6 +419,7 @@ function moreMenu() {
   const items = [
     ['今日简报  ›', false, () => { ui.report = true; }], ['主动发起话题', S.paused, () => act('proactive')],
     [`外观：${APPEARANCE[appearance()]}（点击切换）`, false, cycleAppearance],
+    [S.pet.enabled ? '隐藏桌宠' : '显示桌宠', false, () => act('pet', { on: !S.pet.enabled })],
     ['打开配置文件', false, () => act('open', { target: 'config' })],
   ];
   return h('div', { class: 'panel shadow menu' }, items.map(([text, disabled, fn]) => h('button', { disabled, onclick: () => { fn(); if (!ui.report) ui.more = false; rerender(); } }, text)));
@@ -606,6 +607,11 @@ function generalPane() {
     formCard('静音的聊天', rows.length === 0 ? frow('还没有读到任何聊天', '机器人开始运行并看过聊天后，这里会列出群和私聊')
       : rows.map((c, i) => frow(c.title, i === 0 ? '打开后只读取记录这个聊天，不回复、不主动发话' : null, h('span', { class: 'row' }, h('span', { class: 'faint' }, c.kind === 'group' ? '群聊' : c.kind === 'private' ? '私聊' : ''),
         toggle(muted().includes(c.title), (on) => { const list = muted().filter((x) => x !== c.title); if (on) list.push(c.title); settings.draft.muted_chats = list; dirtyChanged(); }))))),
+    formCard('桌宠（白色像素小狼）',
+      frow('显示桌宠', '悬浮在桌面上，收到消息、思考、回复、不接话、出错时有不同表现；可拖动，点它会有动作，右键有菜单', flagField('pet.enabled', false)),
+      frow('大小', '每个像素放大的倍数', numField('pet.scale', 4, { unit: '倍', min: 1, max: 12 })),
+      frow('空闲时自己走动', null, flagField('pet.wander', true)),
+      frow('头顶气泡', '回复时显示回复内容，不接话时显示理由，出错时显示原因', flagField('pet.bubble', true))),
     formCard('状态窗', frow('开始运行时自动显示小窗', null, flagField('live_window.auto_show', true))),
   ];
 }
