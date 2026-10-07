@@ -28,7 +28,7 @@
 
 ## 安装与首次使用
 
-1. 到仓库 **Releases** 下载 `QQChatBridge-windows-x64.zip`，解压到一个你能读写的固定文件夹（不要直接在压缩包里运行，也不要放在 `Program Files`）。保留整个文件夹，`QQChatBridge.exe` 需要旁边的 `prompts/` 和 `config.example.json`。
+1. 到仓库 **Releases** 下载 `Mac-os-qq-bot-Windows-x64.zip`，解压到一个你能读写的固定文件夹（不要直接在压缩包里运行，也不要放在 `Program Files`）。保留整个文件夹，`QQChatBridge.exe` 需要旁边的 `prompts/` 和 `config.example.json`。
 2. 双击 `QQChatBridge.exe`。程序没有代码签名，SmartScreen 可能提示“未知发布者”：确认下载来自本仓库后点“更多信息 → 仍要运行”。
 3. 首次启动会从 `config.example.json` 创建仅本机使用的 `config.json`，并自动打开设置窗口。填写：
    - **本账号昵称**：本账号在 QQ 中显示的昵称（左上角头像旁），不是群友昵称；
