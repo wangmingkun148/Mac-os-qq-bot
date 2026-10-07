@@ -15,3 +15,8 @@ dist/
 __pycache__/
 *.pyc
 .DS_Store
+
+build/
+*.spec
+.pytest_cache/
+__pycache__/
