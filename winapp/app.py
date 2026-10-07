@@ -18,6 +18,7 @@ import fsutil
 from engine import Engine
 from procutil import InstanceLock
 
+from . import qqlaunch
 from .native import WinNative
 
 PLACEHOLDER_GROUP = "填写主群完整名称"
@@ -352,7 +353,17 @@ class App:
         return {"qqRunning": bool(windows), "qqWindow": bool(visible), "qqReadable": readable, "readError": detail,
                 "backendAlive": self.backend_running, "appElevated": win32.process_elevated(os.getpid()),
                 "qqElevated": qq_elevated, "notifications": self.notify_sink is not None,
-                "qqPath": next((w["image"] for w in windows), "")}
+                "qqPath": next((w["image"] for w in windows), ""),
+                "qqFlags": qqlaunch.flags_active(os.environ.get("QQBOT_TEST_PROCESS", "QQ.exe")) if windows else None}
+
+    def restart_qq(self) -> dict:
+        """Close QQ and start it again with the switches that keep it readable while covered (user-confirmed)."""
+        result = qqlaunch.restart(self.config, os.environ.get("QQBOT_TEST_PROCESS", "QQ.exe"))
+        self.notify("QQ 已重新启动" if result.get("ok") else "重启 QQ 失败", result.get("note") or result.get("error") or "请确认 QQ 已登录")
+        return result
+
+    def make_qq_shortcut(self) -> dict:
+        return qqlaunch.make_shortcut(self.config, os.environ.get("QQBOT_TEST_PROCESS", "QQ.exe"))
 
     def choose_topic(self, index: int):
         if self.native:

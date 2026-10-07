@@ -227,6 +227,32 @@ def process_elevated(pid: int):
         kernel32.CloseHandle(handle)
 
 
+class UNICODE_STRING(ctypes.Structure):
+    _fields_ = [("Length", ctypes.c_ushort), ("MaximumLength", ctypes.c_ushort), ("Buffer", ctypes.c_void_p)]
+
+
+def process_command_line(pid: int) -> str:
+    """Command line of a process ('' when it cannot be read)."""
+    ProcessCommandLineInformation = 60
+    handle = kernel32.OpenProcess(0x1000, False, pid)            # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return ""
+    try:
+        ntdll = ctypes.WinDLL("ntdll")
+        size = wintypes.ULONG(0)
+        ntdll.NtQueryInformationProcess(handle, ProcessCommandLineInformation, None, 0, ctypes.byref(size))
+        if not size.value:
+            return ""
+        buffer = ctypes.create_string_buffer(size.value)
+        status = ntdll.NtQueryInformationProcess(handle, ProcessCommandLineInformation, buffer, size, ctypes.byref(size))
+        if status != 0:
+            return ""
+        text = UNICODE_STRING.from_buffer(buffer)
+        return ctypes.wstring_at(text.Buffer, text.Length // 2) if text.Buffer else ""
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 # --- typing detection --------------------------------------------------------------------------------------
 
 WH_KEYBOARD_LL = 13

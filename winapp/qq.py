@@ -17,7 +17,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from . import clipboard, tree as T, uia, win32
+from . import clipboard, qqlaunch, tree as T, uia, win32
 from .uia import UIA
 
 NAV_MESSAGES = "消息"
@@ -35,6 +35,9 @@ class QQ:
         self._pid = 0
         # development only: drive the mock QQ page (tools/fake_qq) running in Edge instead of the real client
         self.process = os.environ.get("QQBOT_TEST_PROCESS", "QQ.exe")
+        self._previous = 0
+        self._flags_checked = -1e9
+        self._flags_ok = False
 
     # ------------------------------------------------------------------ plumbing
     @property
@@ -85,30 +88,18 @@ class QQ:
 
     def qq_executable(self, configured: str = "") -> str:
         """Path of QQ.exe: the configured one, the running process, or the usual install locations."""
-        if configured and Path(configured).is_file():
-            return configured
-        for window in uia.top_level_windows(self.process):
-            return window["image"]
-        for variable in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
-            base = os.environ.get(variable)
-            if base:
-                for sub in ("Tencent\\QQNT\\QQ.exe", "Programs\\Tencent\\QQNT\\QQ.exe", "Tencent\\QQ\\Bin\\QQ.exe"):
-                    candidate = Path(base) / sub
-                    if candidate.is_file():
-                        return str(candidate)
-        return ""
+        return qqlaunch.find_exe(configured, self.process)
 
     def launch(self, app: str = "") -> dict:
-        """Start QQ when it has no usable window (QQ is single-instance, so this also shows a tray-hidden window)."""
+        """Start QQ when it has no usable window (QQ is single-instance, so this also shows a tray-hidden window).
+        A fresh start carries the switches that keep QQ readable while it is covered by other windows."""
         if self.main_windows(visible_only=True):
             return {"ok": True, "already": True}
         path = self.qq_executable(app)
         if not path:
             return {"error": "qq_executable_not_found"}
-        try:
-            os.startfile(path)  # noqa: S606  (ShellExecute, like double-clicking the shortcut)
-        except OSError as exc:
-            return {"error": f"qq_launch_failed: {exc}"}
+        if not qqlaunch.start(path, qqlaunch.flags_from(self.config)):
+            return {"error": "qq_launch_failed"}
         return {"ok": True}
 
     def wake(self) -> dict:
@@ -124,7 +115,28 @@ class QQ:
 
     def activate(self) -> bool:
         found = self.find_window(allow_minimized=True)
-        return bool(found) and win32.bring_to_front(found[0])
+        if not found:
+            return False
+        current = win32.foreground_hwnd()
+        if current and current != found[0] and win32.window_pid(current) != found[1]:
+            self._previous = current                  # what the user was looking at: put it back when we are done
+        return win32.bring_to_front(found[0])
+
+    def restore_enabled(self) -> bool:
+        """Give the focus back to the window the user was in? Only safe when QQ keeps updating while covered."""
+        setting = self.config.get("restore_focus", "auto")
+        if setting in (True, False):
+            return bool(setting)
+        now = time.monotonic()
+        if now - self._flags_checked > 30:
+            self._flags_checked = now
+            self._flags_ok = bool(qqlaunch.flags_active(self.process))
+        return self._flags_ok
+
+    def finish_focus(self):
+        previous, self._previous = self._previous, 0
+        if previous and self.restore_enabled() and win32.is_window(previous) and self.foreground_ok() and not self.user_typing():
+            win32.bring_to_front(previous)
 
     def foreground_ok(self) -> bool:
         return bool(self._pid) and win32.foreground_is(self._pid)
@@ -361,6 +373,7 @@ class QQ:
             if clipboard.sequence_number() != initial:
                 clipboard.restore(previous)
             self.shell.pending_send = False
+            self.finish_focus()
 
     def bring_into_view(self, root, row, picture) -> bool:
         """Make the centre of ``picture`` visible inside the message list (UIA reports a half-hidden element as
@@ -501,6 +514,7 @@ class QQ:
             return {"error": "send_not_allowed"}
         finally:
             shell.pending_send = False
+            self.finish_focus()
 
     def discard_own_draft(self, group: str, text: str):
         """Remove what a failed send typed, but only while the box still holds our own text."""
@@ -546,6 +560,7 @@ class QQ:
         if editor is None or not self.editor_empty(editor):
             return {"error": "clear_failed"}
         self.log("cleared the bot's stuck draft after an uncertain send")
+        self.finish_focus()
         return {"ok": True}
 
     def send_image(self, group: str, text: str, path: str) -> dict:
@@ -577,6 +592,7 @@ class QQ:
             if image_sequence is not None and clipboard.sequence_number() == image_sequence:
                 clipboard.restore(previous)
             shell.pending_send = False
+            self.finish_focus()
             return result
 
         try:

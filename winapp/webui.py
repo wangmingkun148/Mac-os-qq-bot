@@ -266,6 +266,10 @@ class WebUI:
                 tmp = path.with_suffix(".tmp")
                 tmp.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
                 fsutil.replace(tmp, path)
+        elif name == "restart_qq":
+            return app.restart_qq()
+        elif name == "qq_shortcut":
+            return app.make_qq_shortcut()
         elif name == "test_notification":
             app.notify("QQ 自动回复", "这是一条测试通知", force=True)
         elif name == "quit" and self.shell:

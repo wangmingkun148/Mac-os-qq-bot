@@ -76,7 +76,11 @@ class FakeQQ:
                         outer.sent.append(body)
                 return self._send(200, {"ok": True})
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        class Quiet(ThreadingHTTPServer):
+            def handle_error(self, request, client_address):      # the browser dropping a connection is not news
+                pass
+
+        self.server = Quiet(("127.0.0.1", 0), Handler)
         self.port = self.server.server_address[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 

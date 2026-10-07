@@ -683,10 +683,15 @@ function diagnosticsPane() {
       check('能读取 QQ 界面', d.qqReadable, d.qqReadable ? 'UI Automation 读取正常' : (d.readError || '读取失败')),
       check('权限一致', !(d.qqElevated === true && d.appElevated === false) && d.qqElevated !== null, d.qqElevated === true && d.appElevated === false ? 'QQ 以管理员身份运行而本程序不是：无法点击/输入，请以管理员身份重新运行本程序'
         : d.qqElevated === null ? '无法判断 QQ 是否以管理员身份运行（可能被更高权限保护）' : '正常'),
+      check('QQ 被盖住时仍能刷新', d.qqFlags !== false, d.qqFlags === null || d.qqFlags === undefined ? '（QQ 没有运行，无法检查）' : d.qqFlags ? '已用防休眠参数启动'
+        : 'QQ 被别的窗口完全盖住后界面会停止更新，机器人读到的是旧消息。请用下面的按钮重启 QQ，或始终让 QQ 窗口露出一部分。'),
       check('回复后台', d.backendAlive, d.backendAlive ? '运行中' : '没有在运行'),
       check('系统通知', d.notifications, d.notifications ? '通过托盘图标发出' : '托盘不可用'),
     ] : frow('检测中…')),
-    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: runDiagnostics }, '重新检测'), h('button', { class: 'btn', onclick: () => act('test_notification') }, '发送测试通知'), h('button', { class: 'btn', onclick: () => act('restart_backend') }, '重启后台')),
+    h('div', { class: 'row', style: 'flex-wrap:wrap' }, h('button', { class: 'btn', onclick: runDiagnostics }, '重新检测'), h('button', { class: 'btn', onclick: () => act('test_notification') }, '发送测试通知'), h('button', { class: 'btn', onclick: () => act('restart_backend') }, '重启后台')),
+    h('div', { class: 'row', style: 'flex-wrap:wrap' },
+      h('button', { class: 'btn', onclick: async () => { if (confirm('这会关闭 QQ 并重新启动（需要重新登录一次，未发送的草稿会丢失）。继续吗？')) { await api('/api/do', { name: 'restart_qq' }); runDiagnostics(); } } }, '用防休眠参数重启 QQ'),
+      h('button', { class: 'btn', onclick: async () => { const r = await api('/api/do', { name: 'qq_shortcut' }); alert(r.ok ? '已在桌面创建「QQ（机器人模式）」快捷方式，以后用它启动 QQ。' : '创建失败：' + (r.error || '')); } }, '在桌面创建带参数的 QQ 快捷方式')),
     formCard('文件', file('运行日志', 'runtime/bridge.log', 'log'), file('QQ 操作日志', 'runtime/native.log', 'native_log'), file('后台错误输出', 'runtime/backend.log', 'backend_log'), file('配置文件', 'config.json', 'config'), file('项目文件夹', '', 'folder')),
     h('div', { class: 'faint' }, 'config.json 含 API Key，请不要把它或日志发给他人。'),
   ];

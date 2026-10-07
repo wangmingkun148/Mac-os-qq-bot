@@ -55,7 +55,7 @@ AI = {
 SECTIONS = {
     "": {
         "groups": F(list, required=True), "self_names": F(list, required=True),
-        "python": F(str), "qq_app": F(str), "qq_account": F(str), "persona": F(str),
+        "python": F(str), "qq_app": F(str), "qq_args": F(list), "restore_focus": F((bool, str), choices=(True, False, "auto")),"qq_account": F(str), "persona": F(str),
         "poll_seconds": F(NUMBER, 2, lo=0.5), "merge_seconds": F(NUMBER, 6, lo=0), "max_merge_seconds": F(NUMBER, 20, lo=1),
         "cooldown_seconds": F(NUMBER, 12, lo=0), "secondary_max_wait_seconds": F(NUMBER, 8, lo=0),
         "max_merge_waits": F(int, 3, lo=0, hi=50), "retry_failed_batch": F(bool, True),
