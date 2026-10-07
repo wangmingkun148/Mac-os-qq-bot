@@ -1,10 +1,6 @@
 {
-  "groups": [
-    "填写主群完整名称"
-  ],
-  "self_names": [
-    "填写本账号昵称"
-  ],
+  "groups": [],
+  "self_names": [],
   "qq_account": "",
   "python": "",
   "qq_app": "/Applications/QQ.app",

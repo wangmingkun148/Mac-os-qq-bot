@@ -515,7 +515,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
                 self.live_finish("failed", "AI 接口拒绝了请求，已暂停")
                 self.log(f"AI 接口拒绝了请求，已暂停：{str(exc)[:200]}")
                 self.native.call("pause", text="AI 接口拒绝了请求（" + ("API Key 不对或没有权限" if re.search(r"HTTP 40[13]", str(exc)) else "接口地址或模型名称不对")
-                                  + "）：请在设置 → AI 供应商里检查，点“测试连接”确认后再开始")
+                                  + "）：请在设置 → AI 供应商里检查，保存配置后点击“开始”重试")
                 self.set_status("AI 接口拒绝了请求，已暂停", "model_error")
                 return
             if self.failure_count >= 3:
@@ -530,7 +530,7 @@ class Engine(StyleMixin, ProactiveMixin, LiveMixin, DeliveryMixin):
                 self.paused = True
                 self.live_finish("failed", "模型连续失败 3 次，已自动暂停")
                 self.log(f"模型连续失败 3 次，已自动暂停（最后一次错误：{str(exc)[:200]}）")
-                self.native.call("pause", text="AI 连续失败 3 次，已暂停；请检查网络和 AI 供应商设置（可在设置里点“测试连接”）后重新开启")
+                self.native.call("pause", text="AI 连续失败 3 次，已暂停；请检查网络和 AI 供应商设置，保存后点击“开始”重试")
                 self.set_status("模型连续失败 3 次，已暂停", "model_error")
                 return
             if not self.config.get("retry_failed_batch", True):

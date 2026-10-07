@@ -15,7 +15,7 @@ final class Bridge: NSObject, NSApplicationDelegate {
     var pendingSend = false
     var ownsPIDFile = false
     var projectAccess:URL?
-    let base: URL
+    var base: URL
     var config: [String:Any] = [:]
     var firstRun = false
     lazy var model = AppModel(control: self)
@@ -24,29 +24,63 @@ final class Bridge: NSObject, NSApplicationDelegate {
     var settingsController: SettingsWindowController?
     var petController: PetController?
     var spaceController: QQSpaceController?
-    let isProbe: Bool
 
     override init() {
-        isProbe = CommandLine.arguments.contains("--probe") || CommandLine.arguments.contains("--qzone-probe")
         if let i = CommandLine.arguments.firstIndex(of:"--base"), CommandLine.arguments.count > i+1 {
             base = URL(fileURLWithPath:CommandLine.arguments[i+1])
         } else { base = Bundle.main.bundleURL.deletingLastPathComponent() }
         super.init()
-        let local=base.appendingPathComponent("config.json")
-        if !FileManager.default.fileExists(atPath:local.path),
-           let data=try? Data(contentsOf:base.appendingPathComponent("config.example.json")) {
-            try? data.write(to:local,options:.atomic)
-            try? FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:local.path)
-            firstRun=true
-        }
         if !CommandLine.arguments.contains("--authorize-project") {
             var stale=false
             if let data=UserDefaults.standard.data(forKey:"QQBridgeOpenSourceProjectAccess"),
                let url=try? URL(resolvingBookmarkData:data,options:.withSecurityScope,relativeTo:nil,bookmarkDataIsStale:&stale),
-               url.standardizedFileURL==base.standardizedFileURL,url.startAccessingSecurityScopedResource() {projectAccess=url}
+               projectFilesAvailable(url),
+               (url.standardizedFileURL==base.standardizedFileURL || !projectFilesAvailable(base)),
+               url.startAccessingSecurityScopedResource() {projectAccess=url;base=url}
             loadConfig()
         }
         normalizeConfig()
+    }
+    private func projectFilesAvailable(_ directory: URL) -> Bool {
+        ["bridge.py", "config.example.json", "prompts/reply-instructions.txt"].allSatisfy {
+            FileManager.default.isReadableFile(atPath:directory.appendingPathComponent($0).path)
+        }
+    }
+    /// Downloaded apps may run from a translocated path. Ask for the real project folder rather than starting without its files.
+    private func prepareProject() -> Bool {
+        if CommandLine.arguments.contains("--authorize-project") || !projectFilesAvailable(base) {
+            NSApp.setActivationPolicy(.regular);NSApp.activate(ignoringOtherApps:true)
+            let panel=NSOpenPanel();panel.canChooseFiles=false;panel.canChooseDirectories=true;panel.allowsMultipleSelection=false
+            panel.title="选择 QQ 聊天 Bot 项目文件夹";panel.prompt="使用此文件夹"
+            panel.message="找不到应用旁边的程序文件，可能正在从下载隔离路径运行。请选择解压后的整个文件夹，其中应包含 bridge.py、config.example.json 和 prompts。"
+            panel.directoryURL=FileManager.default.urls(for:.downloadsDirectory,in:.userDomainMask).first
+            guard panel.runModal() == .OK,let url=panel.url else {return false}
+            guard projectFilesAvailable(url) else {
+                launchProblem("所选文件夹缺少程序文件，请完整解压下载包后重新打开。");return false
+            }
+            if url.startAccessingSecurityScopedResource() {projectAccess=url}
+            base=url
+            if let bookmark=try? url.bookmarkData(options:.withSecurityScope,includingResourceValuesForKeys:nil,relativeTo:nil) {
+                UserDefaults.standard.set(bookmark,forKey:"QQBridgeOpenSourceProjectAccess")
+            }
+        }
+        do {
+            let local=base.appendingPathComponent("config.json")
+            if !FileManager.default.fileExists(atPath:local.path) {
+                try Data(contentsOf:base.appendingPathComponent("config.example.json")).write(to:local,options:.atomic)
+                try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:local.path)
+                firstRun=true
+            }
+            try FileManager.default.createDirectory(at:base.appendingPathComponent("runtime"),withIntermediateDirectories:true)
+            loadConfig()
+            return true
+        } catch {
+            launchProblem("无法写入项目文件夹。请将完整解压文件夹移到可写位置后重试。\n"+error.localizedDescription)
+            return false
+        }
+    }
+    private func launchProblem(_ text: String) {
+        let alert=NSAlert();alert.messageText="QQ 聊天 Bot 无法启动";alert.informativeText=text;alert.runModal()
     }
     /// Re-reads config.json. Call before changing and saving it: edits made on disk while the app runs (by hand or by
     /// another tool) must not be overwritten by this process's older in-memory copy.
@@ -55,6 +89,8 @@ final class Bridge: NSObject, NSApplicationDelegate {
     }
     private func normalizeConfig() {
         config["reply_mode"] = "regular"
+        config["groups"] = (config["groups"] as? [String] ?? []).filter {$0 != "填写主群完整名称"}
+        config["self_names"] = (config["self_names"] as? [String] ?? []).filter {$0 != "填写本账号昵称"}
     }
     var groups: [String] {config["groups"] as? [String] ?? []}
     /// True while the user typed within the last `typing_quiet_seconds` (default 3): QQ is then never brought to the
@@ -70,42 +106,8 @@ final class Bridge: NSObject, NSApplicationDelegate {
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         Notifier.log = { [weak self] line in self?.nativeLog(line) }
+        guard prepareProject() else {NSApp.terminate(nil);return}
         CCFont.register(extra: base.appendingPathComponent("Resources/Fonts/ArkPixel12.otf"))
-        if CommandLine.arguments.contains("--authorize-project") {
-            NSApp.setActivationPolicy(.regular)
-            NSApp.activate(ignoringOtherApps:true)
-            let panel=NSOpenPanel();panel.canChooseFiles=false;panel.canChooseDirectories=true;panel.allowsMultipleSelection=false
-            panel.title="授权 QQChatBridge 项目文件夹";panel.prompt="授权此文件夹"
-            panel.message="请选择 QQChatBridge 文件夹，允许程序读取模型设置、风格提示词和运行记录。"
-            panel.directoryURL=base.deletingLastPathComponent()
-            guard panel.runModal() == .OK,let url=panel.url,url.standardizedFileURL==base.standardizedFileURL else {NSApp.terminate(nil);return}
-            if url.startAccessingSecurityScopedResource() {projectAccess=url}
-            if let bookmark=try? url.bookmarkData(options:.withSecurityScope,includingResourceValuesForKeys:nil,relativeTo:nil) {UserDefaults.standard.set(bookmark,forKey:"QQBridgeOpenSourceProjectAccess")}
-            loadConfig()
-        }
-        try? FileManager.default.createDirectory(at:base.appendingPathComponent("runtime"),withIntermediateDirectories:true)
-        if isProbe {
-            let spaceProbe=CommandLine.arguments.contains("--qzone-probe")
-            if let q=qq {
-                let root=AXUIElementCreateApplication(q.processIdentifier)
-                AXUIElementSetAttributeValue(root,"AXManualAccessibility" as CFString,kCFBooleanTrue)
-                AXUIElementSetAttributeValue(root,"AXEnhancedUserInterface" as CFString,kCFBooleanTrue)
-                NSApp.activate(ignoringOtherApps:true);q.activate(options:[])
-                DispatchQueue.main.asyncAfter(deadline:.now()+1) { [self] in
-                    let value:[String:Any]=spaceProbe ? ["trusted":AXIsProcessTrusted(),"windows":(ax(root,"AXWindows") as? [AXUIElement] ?? []).map {tree($0)},"space":QQSpaceDriver(bridge:self).scan()] : snapshot()
-                    if let data=try? JSONSerialization.data(withJSONObject:value,options:[.prettyPrinted,.sortedKeys]) {
-                        let target=base.appendingPathComponent(spaceProbe ? "runtime/qzone-probe.json" : "runtime/probe.json")
-                        try? data.write(to:target,options:.atomic);try? FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:target.path)
-                    }
-                    NSApp.terminate(nil)
-                }
-                return
-            }
-            let value=snapshot()
-            let data = try! JSONSerialization.data(withJSONObject:value,options:[.prettyPrinted,.sortedKeys])
-            try? data.write(to:base.appendingPathComponent(spaceProbe ? "runtime/qzone-probe.json" : "runtime/probe.json"))
-            NSApp.terminate(nil); return
-        }
         let pidFile=base.appendingPathComponent("runtime/app.pid")
         if let value=try? String(contentsOf:pidFile,encoding:.utf8),let old=Int32(value.trimmingCharacters(in:.whitespacesAndNewlines)),old != getpid(),kill(old,0)==0,
            NSRunningApplication.runningApplications(withBundleIdentifier:Bundle.main.bundleIdentifier ?? "").contains(where:{$0.processIdentifier==old}) {
@@ -132,13 +134,13 @@ final class Bridge: NSObject, NSApplicationDelegate {
         model.start()
         spaceController=QQSpaceController(bridge:self,model:model.space)
         petController=PetController(model:model)
-        startBackend()
+        if configurationProblem(config)==nil {startBackend()} else {update("请先填写本账号昵称、主群和 AI 设置")}
         Timer.scheduledTimer(withTimeInterval:2,repeats:true) { [weak self] _ in self?.watch() }
         watch()
         Timer.scheduledTimer(withTimeInterval:60,repeats:true) { [weak self] _ in self?.checkSpaceSchedule() }
         checkSpaceSchedule()
-        if firstRun {DispatchQueue.main.asyncAfter(deadline:.now()+0.5) {self.showSettings()}}
-        if CommandLine.arguments.contains("--start") && !firstRun {toggle()}
+        if firstRun || configurationProblem(config) != nil {DispatchQueue.main.asyncAfter(deadline:.now()+0.5) {self.showSettings()}}
+        if CommandLine.arguments.contains("--start") && !firstRun && configurationProblem(config)==nil {toggle()}
         if let flag=CommandLine.arguments.first(where:{$0.hasPrefix("--show=")}) {
             // Development aid: open one UI surface on launch (popover | live | settings).
             DispatchQueue.main.asyncAfter(deadline:.now()+0.8) { [self] in
@@ -156,7 +158,7 @@ final class Bridge: NSObject, NSApplicationDelegate {
     func pythonURL(_ settings: [String:Any]? = nil) -> URL {
         let specified=(settings ?? config)["python"] as? String ?? ""
         if !specified.isEmpty { return URL(fileURLWithPath:specified) }
-        let paths=[base.appendingPathComponent(".venv/bin/python3").path, "/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"]
+        let paths=[base.appendingPathComponent(".venv/bin/python3").path, "/usr/bin/python3", "/opt/homebrew/bin/python3", "/usr/local/bin/python3"]
         return URL(fileURLWithPath:paths.first(where:{FileManager.default.isExecutableFile(atPath:$0)}) ?? "/usr/bin/python3")
     }
     func startBackend() {
@@ -261,6 +263,7 @@ final class Bridge: NSObject, NSApplicationDelegate {
         button.title=" "+model.phase.menuTitle
     }
     @objc func toggle() {
+        if paused,let problem=configurationProblem(config) {update(problem);showSettings();return}
         paused.toggle(); update(paused ? "已暂停" : "正在记录现有消息")
         emit(["event":"paused","paused":paused])
         if !paused,(config["live_window"] as? [String:Any])?["auto_show"] as? Bool != false {liveController?.show(activate:false)}
@@ -304,6 +307,7 @@ final class Bridge: NSObject, NSApplicationDelegate {
         projectAccess?.stopAccessingSecurityScopedResource()
     }
     func watch() {
+        guard configurationProblem(config)==nil else {return}
         if !AXIsProcessTrusted() {update("需要为 QQChatBridge 开启辅助功能权限");return}
         if let q=qq,q.processIdentifier != observedPID {
             observedPID=q.processIdentifier
@@ -395,14 +399,25 @@ extension Bridge: BridgeControl {
               let first=(report["errors"] as? [String])?.first else {return nil}
         return "配置有误：\(first)"
     }
+    private func configurationProblem(_ settings: [String:Any]) -> String? {
+        let groups=settings["groups"] as? [String] ?? []
+        if groups.isEmpty || groups.contains(where:{$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || $0=="填写主群完整名称"}) {
+            return "请填写主群完整名称，提示文字不能作为群名"
+        }
+        let names=settings["self_names"] as? [String] ?? []
+        if names.isEmpty || names.contains(where:{$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || $0=="填写本账号昵称"}) {
+            return "请填写本账号昵称，提示文字不能作为昵称"
+        }
+        if !AppModel.configured(settings["ai"] as? [String:Any] ?? [:]) {return "请填写 AI 接口地址、API Key 和模型名称"}
+        return nil
+    }
     /// Returns a user-facing problem description, or nil when the configuration was accepted.
     func applyConfig(_ cfg:[String:Any],restart:Bool) -> String? {
         let updated=cfg
-        let ai=updated["ai"] as? [String:Any] ?? [:]
-        if !AppModel.configured(ai) { return "请填写 AI 接口地址、API Key 和模型名称" }
+        if let problem=configurationProblem(updated) {return problem}
         if let problem=configProblem(updated) {return problem}
         config=updated
-        if restart {saveAndRestart(message:"配置已保存，回复服务已重启")} else {saveAndApply(message:"配置已保存，热切换中")}
+        if restart || backend?.isRunning != true {saveAndRestart(message:"配置已保存，回复服务已重启")} else {saveAndApply(message:"配置已保存，热切换中")}
         return nil
     }
 }

@@ -122,10 +122,10 @@ private struct PersonCard: View {
                 }
             }
             FormRow(label: "昵称", hint: "群里显示的名字，可以填多个，用逗号隔开；有人改名就把新名字加上") {
-                ClayField(text: names, placeholder: "例如：June，小六", width: 300)
+                ClayField(text: names, placeholder: "例如：昵称A、昵称B", width: 300)
             }
             FormRow(label: "怎么称呼", hint: "机器人叫他时用的称呼；留空就不特别称呼") {
-                ClayField(text: binding(\.callAs), placeholder: "例如：老冯", width: 300)
+                ClayField(text: binding(\.callAs), placeholder: "例如：朋友", width: 300)
             }
             FormRow(label: "他是谁", hint: "在群里的身份、常聊的话题、和谁比较熟") { NoteField(text: binding(\.about)) }
             FormRow(label: "说话注意", hint: "他喜欢或不喜欢的玩笑、不要碰的话题") { NoteField(text: binding(\.notes)) }

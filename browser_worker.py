@@ -99,7 +99,7 @@ def main():
     profile = Path(sys.argv[1])
     profile.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(str(profile), channel="chrome", headless=False, chromium_sandbox=True,
+        context = p.chromium.launch_persistent_context(str(profile), headless=False, chromium_sandbox=True,
                     accept_downloads=False)
         context.add_init_script("""document.addEventListener('play', e => {
           if(e.target instanceof HTMLMediaElement && e.target.dataset.qqPlaybackAllowed !== 'true') {

@@ -235,13 +235,13 @@ struct GeneralPane: View {
             FormRow(label: "3. 开启辅助功能", hint: "系统设置 → 隐私与安全性 → 辅助功能；较新系统可能显示设备控制和数据访问。重新构建后可能需要关闭再开启。") {
                 Button("打开权限设置") { model.control?.openPermissions() }.buttonStyle(ClayButtonStyle(prominent: false, compact: true))
             }
-            FormRow(label: "4. 保存并开始", hint: "保存配置后回菜单栏点开始监听。电脑需保持唤醒；窗口切换和粘贴会使用当前桌面。", last: true) { EmptyView() }
+            FormRow(label: "4. 保存并开始", hint: "保存配置后回菜单栏点“开始”。电脑需保持唤醒；窗口切换和粘贴会使用当前桌面。", last: true) { EmptyView() }
         }
         FormCard(title: "账号与主群") {
-            FormRow(label: "本账号昵称", hint: "填写 QQ 界面显示的昵称，用于避免错账号发送；不填群友昵称。") { ClayField(text: names, width: 220) }
-            FormRow(label: "主群完整名称", hint: "必须与 QQ 会话列表完整名称一致。") { ClayField(text: groups, width: 220) }
+            FormRow(label: "本账号昵称", hint: "填写 QQ 界面显示的昵称，用于避免错账号发送；不填群友昵称。") { ClayField(text: names, placeholder: "填写本账号昵称", width: 220) }
+            FormRow(label: "主群完整名称", hint: "必须与 QQ 会话列表完整名称一致。") { ClayField(text: groups, placeholder: "填写主群完整名称", width: 220) }
             FormRow(label: "本账号 QQ 号", hint: "QQ 空间功能使用；不使用空间可留空。") { ClayField(text: draft.text("qq_account"), width: 220) }
-            FormRow(label: "Python 路径", hint: "留空自动查找项目 .venv、Homebrew 或系统 Python。", last: true) { ClayField(text: draft.text("python"), width: 220, mono: true) }
+            FormRow(label: "Python 路径", hint: "留空自动查找项目 .venv、系统 Python 或 Homebrew Python。", last: true) { ClayField(text: draft.text("python"), width: 220, mono: true) }
         }
         FormCard(title: "自定义设定（可选）") {
             Text("留空使用通用聊天规则。设定、风格摘要和群友记忆只保存在你自己的电脑中。").foregroundColor(CC.textSecondary)
@@ -314,10 +314,7 @@ struct GeneralPane: View {
             FormRow(label: "头顶气泡", hint: "回复时显示回复内容，不接话时显示理由，出错时显示原因", last: true) { ClayToggle(isOn: draft.flag("pet.bubble", true)) }
         }
         FormCard(title: "状态窗") {
-            FormRow(label: "开始运行时自动显示小窗") { ClayToggle(isOn: draft.flag("live_window.auto_show", true)) }
-            FormRow(label: "请求模型的思考摘要", hint: "仅 Gemini 搜索线路会主动请求，略增 token；Codex 有返回时自动显示。关闭时仍显示判断与回复理由。", last: true) {
-                ClayToggle(isOn: draft.flag("live_window.thought_summaries", false))
-            }
+            FormRow(label: "开始运行时自动显示小窗", last: true) { ClayToggle(isOn: draft.flag("live_window.auto_show", true)) }
         }
     }
 }
@@ -436,7 +433,7 @@ struct SpacePane: View {
         FormCard(title: "每日定时") {
             FormRow(label: "每天自动浏览一轮") { ClayToggle(isOn: draft.flag("qzone.schedule_enabled", true)) }
             FormRow(label: "开始时间", hint: "按下面的时区，晚于该时间启动会补跑当天一轮") { NumberField(value: draft.number("qzone.hour", 19), unit: "点", range: 0...23) }
-            FormRow(label: "时区") { ClayField(text: draft.text("qzone.timezone", "Europe/London"), width: 170, mono: true) }
+            FormRow(label: "时区") { ClayField(text: draft.text("qzone.timezone", TimeZone.current.identifier), width: 170, mono: true) }
             FormRow(label: "处理间隔", hint: "每条动态之间的等待", last: true) { NumberField(value: draft.number("qzone.interval_seconds", 60), unit: "秒", range: 10...3600) }
         }
         Text("需要 QQ 与本程序保持运行，电脑唤醒并联网。QQ 在发送群聊消息时，空间操作会等待，不会抢着用输入框。")

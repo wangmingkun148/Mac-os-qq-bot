@@ -133,9 +133,9 @@ def check(config: dict):
             continue
         _check_section(path, data, spec, errors, warnings)
     groups = config.get("groups")
-    if isinstance(groups, list) and (not groups or not all(isinstance(g, str) and g for g in groups)):
+    if isinstance(groups, list) and (not groups or not all(isinstance(g, str) and g.strip() and g != "填写主群完整名称" for g in groups)):
         errors.append("「groups」至少要有一个群名，且每项都是非空文字")
-    if isinstance(config.get("self_names"), list) and not config["self_names"]:
+    if isinstance(config.get("self_names"), list) and (not config["self_names"] or not all(isinstance(n, str) and n.strip() and n != "填写本账号昵称" for n in config["self_names"])):
         errors.append("「self_names」不能为空：程序靠它确认当前登录的是哪个 QQ 账号")
     if isinstance(config.get("max_merge_seconds"), NUMBER) and isinstance(config.get("merge_seconds"), NUMBER) \
             and config["max_merge_seconds"] < config["merge_seconds"]:
